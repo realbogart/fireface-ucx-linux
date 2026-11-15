@@ -176,7 +176,8 @@ That is why `ucxcfg apply --push` exists.
 | `0x3f02` | per-channel DSP status | observed |
 | `0x3f01`, `0x3f03`, `0x3f10`, `0x3f50` | status reported while polled | unknown |
 | `0x3f99` | `0x0812` = dump request | verified |
-| `0x3f97`, `0x3f98`, `0x3f9e` | sent by TotalMix (setup recall, main out) | not sent, don't send |
+| `0x3f97`, `0x3f98` | sent by TotalMix (setup recall, main out) | not sent, don't send |
+| `0x3f9e` | sent by TotalMix | no effect on the signal found (bits 1, 2) |
 | `0x3e05`, `0x3e06` | **flash store, never send** | |
 | `0x4000 + 64·out + src` | mixer gain. src = input, or `0x20` + playback channel. Linear, 32768 = 0 dB, max 65536; negative inverts | verified |
 | `0x4000 + 64·0x1e/0x1f + src` | FX send bus left / right, same sources | verified |
@@ -208,7 +209,10 @@ words. `tools/ucxdsp.py` wraps it.
 
 ## Still unknown
 
-- Interface 0 and the 4-byte events on `0x8b`.
+- Interface 0.
+- The events on `0x8b`. At every stream start the unit sends a burst of
+  about 17 ms: words with bit 30 set and a frame counter in bits 15:0
+  (+12 per word at 48 kHz), bit 31 set in its second part. Nothing after.
 - Requests `0x16` and `0x1b`: why Windows' clock words work for Windows.
 - Registers with no effect found: inputs `0x03`–`0x06`, outputs `0x05`/`0x06`,
   `0x3d00`, `0x3d02`–`0x3d04`, `0x3d43`–`0x3d46`, the `0x3fxx` status words.

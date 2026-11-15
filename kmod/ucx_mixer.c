@@ -1396,8 +1396,9 @@ static int ucx_hwdep_init(struct ucx *ucx)
  * Word flags: bit 31 stream restart needed, bit 30 counter, bit 29 a 16-bit
  * value. Unflagged words are front-panel events for models 0/1/10/0xd only;
  * for the UCX (model 3) the Windows driver ignores them.
- * Observed: on first read the UCX sends a burst counting 0..0x426 in steps
- * of 12 (one word per 250 us = 48 kHz), flags 0x4/0xc, then nothing.
+ * Observed: at every stream start the UCX sends a burst of about 17 ms,
+ * counting in steps of 12 (one word per 250 us = 48 kHz), flags 0x4 and
+ * then 0xc (bit 31 from about 4.5 ms in), then nothing while it streams.
  */
 #define UCX_EVENT_BYTES		8
 
