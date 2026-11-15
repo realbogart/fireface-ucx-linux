@@ -1,0 +1,26 @@
+# Dev shell state
+.direnv/
+.envrc
+result
+result-*
+
+# Local, not part of the project: private notes and tool setup
+/notes
+/CLAUDE.local.md
+/.mcp.json
+/.rea
+
+# Proprietary vendor files and anything extracted from them
+/driver_usb_win_*.zip
+/work/
+
+# Build output
+/build/
+compile_commands.json
+kmod/*.o
+kmod/*.ko
+kmod/*.mod
+kmod/*.mod.c
+kmod/.*.cmd
+kmod/Module.symvers
+kmod/modules.order

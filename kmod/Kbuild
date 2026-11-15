@@ -1,0 +1,3 @@
+obj-m := snd-fireface-ucx.o
+snd-fireface-ucx-y := ucx_main.o ucx_pcm.o ucx_mixer.o
+ccflags-y := -I$(src)/../include

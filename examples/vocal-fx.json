@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "inputs": {
+    "Mic 1": {
+      "gain": 30,
+      "fx-send": -12,
+      "lowcut": {"on": true, "freq": 80, "slope": 12},
+      "eq": {"on": true, "mid": {"gain": -3, "freq": 400, "q": 1.4}},
+      "dynamics": {"on": true, "comp-threshold": -20, "comp-ratio": 3}
+    }
+  },
+  "outputs": {
+    "Line 1/2": {
+      "volume": 0,
+      "mix": {"PCM 1/2": 0}
+    },
+    "Phones L/R": {
+      "volume": -20,
+      "fx-return": -6,
+      "mix": {"PCM 1/2": 0, "Mic 1": -6}
+    },
+    "FX Send L/R": {
+      "mix": {"PCM 3/4": -10}
+    }
+  },
+  "reverb": {"on": true, "type": "Medium Room", "volume": -6}
+}

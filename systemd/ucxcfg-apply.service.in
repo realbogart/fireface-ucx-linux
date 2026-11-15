@@ -1,0 +1,30 @@
+# Apply your Fireface UCX config whenever the unit appears (plug-in, power
+# on, module reload: started by udev/70-snd-fireface-ucx.rules) and when the
+# user session starts (default.target): the udev want only acts on a card
+# that appears while the user manager runs, not on one that was there
+# before it (measured). After a load
+# the driver can't know what the unit never reports (playback gains,
+# loopback, EQ+D), so the whole config is sent (--push). Nothing is needed
+# after a system sleep: the driver keeps its state across it.
+#
+# @BINDIR@ and @SLEEP@ are filled in by `make install-ucxcfg`; the NixOS
+# module (nix/module.nix) defines the same unit itself.
+[Unit]
+Description=Apply your Fireface UCX config (~/.config/ucx/config.json)
+ConditionPathExists=%E/ucx/config.json
+StartLimitIntervalSec=60
+StartLimitBurst=4
+
+[Service]
+Type=oneshot
+# The driver asks the unit for its state at probe; let it arrive, so that
+# ucxcfg knows the output volumes before it writes them
+ExecStartPre=@SLEEP@ 2
+ExecStart=@BINDIR@/ucxcfg apply --push %E/ucx/config.json
+# 3: no unit (a session without one plugged in); nothing to retry
+SuccessExitStatus=3
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

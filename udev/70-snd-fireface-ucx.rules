@@ -1,0 +1,7 @@
+# When a snd-fireface-ucx card is ready, start ucxcfg-apply.service in the
+# logged-in user's systemd, which applies ~/.config/ucx/config.json.
+#
+# The trigger is the control device: ALSA registers it last of the card's
+# devices (SNDRV_DEV_CONTROL), so the hwdep device that ucxcfg also needs
+# exists by then. The card device itself is added before both.
+ACTION=="add", SUBSYSTEM=="sound", KERNEL=="controlC*", DRIVERS=="snd-fireface-ucx", TAG+="systemd", ENV{SYSTEMD_USER_WANTS}+="ucxcfg-apply.service"

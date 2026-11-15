@@ -1,0 +1,1003 @@
+{
+  "version": 1,
+  "inputs": {
+    "Mic 1": {
+      "gain": 0,
+      "phantom": false,
+      "autoset": false,
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "Mic 2": {
+      "gain": 0,
+      "phantom": false,
+      "autoset": false,
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "Inst 3": {
+      "gain": 0,
+      "level": "+4 dBu",
+      "hi-z": false,
+      "autoset": false,
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "Inst 4": {
+      "gain": 0,
+      "level": "+4 dBu",
+      "hi-z": false,
+      "autoset": false,
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "Line 5/6": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "Line 7/8": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "S/PDIF L/R": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "ADAT 1/2": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "ADAT 3/4": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "ADAT 5/6": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    },
+    "ADAT 7/8": {
+      "fx-send": -65,
+      "fx-mute": false,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      }
+    }
+  },
+  "outputs": {
+    "Line 1/2": {
+      "volume": 0,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false,
+      "mix": {
+        "PCM 1/2": 0
+      }
+    },
+    "Line 3/4": {
+      "volume": -65,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false
+    },
+    "Line 5/6": {
+      "volume": -65,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false
+    },
+    "Phones L/R": {
+      "volume": -40,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false,
+      "mix": {
+        "PCM 1/2": 0
+      }
+    },
+    "S/PDIF L/R": {
+      "volume": -65,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false
+    },
+    "ADAT 1/2": {
+      "volume": 0,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": true,
+      "mix": {
+        "PCM 1/2": 0
+      }
+    },
+    "ADAT 3/4": {
+      "volume": -65,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false
+    },
+    "ADAT 5/6": {
+      "volume": -65,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false
+    },
+    "ADAT 7/8": {
+      "volume": -65,
+      "balance": 0,
+      "phase-invert": false,
+      "fx-return": -65,
+      "lowcut": {
+        "on": false,
+        "freq": 50,
+        "slope": 18
+      },
+      "eq": {
+        "on": false,
+        "low": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 100,
+          "q": 1
+        },
+        "mid": {
+          "gain": 0,
+          "freq": 1000,
+          "q": 1
+        },
+        "high": {
+          "type": "shelf",
+          "gain": 0,
+          "freq": 10000,
+          "q": 1
+        }
+      },
+      "dynamics": {
+        "on": false,
+        "gain": 0,
+        "attack": 10,
+        "release": 100,
+        "comp-threshold": -30,
+        "comp-ratio": 1,
+        "exp-threshold": -60,
+        "exp-ratio": 1
+      },
+      "autolevel": {
+        "on": false,
+        "max-gain": 6,
+        "headroom": 6,
+        "rise-time": 5
+      },
+      "mute": false,
+      "loopback": false
+    }
+  },
+  "hardware": {
+    "clock-source": "internal",
+    "optical-out": "adat",
+    "spdif-professional": false,
+    "word-clock-single-speed": false,
+    "word-clock-termination": true,
+    "eqd-record": true,
+    "line-in-level": "+4 dBu",
+    "line-out-level": "+4 dBu",
+    "phones-level": "+4 dBu"
+  },
+  "mute-enable": true,
+  "reverb": {
+    "on": false,
+    "type": "Small Room",
+    "pre-delay": 20,
+    "low-cut": 20,
+    "room-scale": 1,
+    "attack": 100,
+    "hold": 80,
+    "release": 200,
+    "high-cut": 20000,
+    "time": 2,
+    "high-damp": 18000,
+    "smooth": 100,
+    "volume": -3,
+    "width": 0.6
+  },
+  "echo": {
+    "on": false,
+    "type": "Stereo Echo",
+    "delay": 0.6,
+    "feedback": 50,
+    "high-cut": "off",
+    "volume": -3,
+    "width": 0.6
+  }
+}
