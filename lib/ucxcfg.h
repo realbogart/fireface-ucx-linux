@@ -195,6 +195,11 @@ struct ucx_stream_info {
 		unsigned int rate, channels, period, buffer;
 	} dir[2];			/* 0 playback, 1 capture */
 	int urb_blocks;			/* as the driver uses it (2 or 4), -1 if unreadable */
+	/*
+	 * Since the unit appeared: stream errors the unit reported, and restarts
+	 * after a failed transfer (Windows: "Errors" x/y). -1: the driver has none.
+	 */
+	long errors, restarts;
 };
 void ucx_dev_stream(struct ucx_dev *dev, struct ucx_stream_info *info);
 /* Frames of a loopback round trip in the unit and driver, without the ALSA buffer (measured) */

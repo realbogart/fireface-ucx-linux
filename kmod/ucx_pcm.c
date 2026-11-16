@@ -332,6 +332,47 @@ static const struct snd_kcontrol_new ucx_iec958_ctl = {
 	.get = ucx_iec958_get,
 };
 
+/*
+ * Stream errors since the unit appeared (struct ucx): read-only, and only
+ * read when asked, so they cost the streams nothing
+ */
+static int ucx_errors_info(struct snd_kcontrol *kctl, struct snd_ctl_elem_info *info)
+{
+	info->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	info->count = 1;
+	info->value.integer.min = 0;
+	info->value.integer.max = INT_MAX;
+	return 0;
+}
+
+static int ucx_errors_get(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *value)
+{
+	struct ucx *ucx = snd_kcontrol_chip(kctl);
+
+	value->value.integer.value[0] =
+		atomic_read(kctl->private_value ? &ucx->stream_restarts : &ucx->unit_errors);
+	return 0;
+}
+
+static const struct snd_kcontrol_new ucx_errors_ctls[] = {
+	{
+		.iface = SNDRV_CTL_ELEM_IFACE_CARD,
+		.name = "Stream Errors",
+		.access = SNDRV_CTL_ELEM_ACCESS_READ | SNDRV_CTL_ELEM_ACCESS_VOLATILE,
+		.info = ucx_errors_info,
+		.get = ucx_errors_get,
+		.private_value = 0,
+	},
+	{
+		.iface = SNDRV_CTL_ELEM_IFACE_CARD,
+		.name = "Stream Restarts",
+		.access = SNDRV_CTL_ELEM_ACCESS_READ | SNDRV_CTL_ELEM_ACCESS_VOLATILE,
+		.info = ucx_errors_info,
+		.get = ucx_errors_get,
+		.private_value = 1,
+	},
+};
+
 static void ucx_capture_complete(struct urb *urb)
 {
 	struct ucx *ucx = urb->context;
@@ -502,6 +543,9 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 		}
 	}
 
+	/* The unit's start burst on 0x8b follows: see ucx_count_events() */
+	WRITE_ONCE(ucx->started, jiffies);
+
 	/* In the Windows driver's order: 0x03, 0x84, 0x01, 0x82 */
 	for (pair = pairs - 1; pair >= 0; pair--) {
 		for (i = 0; i < UCX_PLAY_URBS; i++) {
@@ -570,8 +614,10 @@ void ucx_stream_err_work(struct work_struct *work)
 		ucx->err_window = jiffies;
 		ucx->err_restarts = 0;
 	}
-	if (ucx->err_restarts++ < UCX_STREAM_RESTARTS)
+	if (ucx->err_restarts++ < UCX_STREAM_RESTARTS) {
+		atomic_inc(&ucx->stream_restarts);
 		err = ucx_engine_start(ucx, ucx->rate);
+	}
 	/* urb_blocks may have changed since prepare: see ucx_pcm_prepare() */
 	for (dir = 0; dir < 2 && !err; dir++) {
 		if ((ucx->prepared & BIT(dir)) &&
@@ -799,6 +845,7 @@ static const struct snd_pcm_ops ucx_pcm_ops = {
 int ucx_pcm_init(struct ucx *ucx)
 {
 	struct snd_pcm *pcm;
+	unsigned int i;
 	int err;
 
 	err = ucx_alloc_urbs(ucx, &ucx->play);
@@ -817,6 +864,11 @@ int ucx_pcm_init(struct ucx *ucx)
 	snd_pcm_set_managed_buffer_all(pcm, SNDRV_DMA_TYPE_VMALLOC, NULL, 0, 0);
 	ucx->pcm = pcm;
 	spin_lock_init(&ucx->cs_lock);
+	for (i = 0; i < ARRAY_SIZE(ucx_errors_ctls); i++) {
+		err = snd_ctl_add(ucx->card, snd_ctl_new1(&ucx_errors_ctls[i], ucx));
+		if (err < 0)
+			return err;
+	}
 	return snd_ctl_add(ucx->card, snd_ctl_new1(&ucx_iec958_ctl, ucx));
 }
 

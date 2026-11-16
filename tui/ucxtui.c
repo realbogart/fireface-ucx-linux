@@ -1089,6 +1089,9 @@ static void build_stream(void)
 	unsigned int rate = 0, frames, i;
 
 	add(R_HEAD, 1, "STREAM");
+	if (stream.errors >= 0)
+		add_note(1, "Errors", "%ld unit, %ld restarts", stream.errors,
+			 stream.restarts)->colour = stream.errors || stream.restarts ? C_YELLOW : C_TEXT;
 	for (i = 0; i < 2; i++) {
 		if (!stream.dir[i].open) {
 			add_note(1, names[i], "not open")->colour = C_DIM;

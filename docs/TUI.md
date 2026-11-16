@@ -81,8 +81,12 @@ not seen, that silences them, so start from a file in that case.
    `urb_blocks` is a module parameter of the driver (2 or 4, read when a
    stream starts). The round trip is the unit's and the driver's part of a
    loopback, from measurements, for that rate and `urb_blocks`; the
-   program's buffer comes on top. There is no dropout counter: the driver
-   doesn't count them (PipeWire does: `pw-top`, column ERR).
+   program's buffer comes on top. **Errors** counts, since the unit
+   appeared, the stream errors the unit reported and the driver's restarts
+   of the streams after a failed transfer: the two numbers of "Errors" in
+   RME's Windows dialog. They are transmission errors, not a program
+   missing its deadline (PipeWire counts those: `pw-top`, column ERR). The
+   line is missing with a driver older than the counters.
 
 Meters show the peak since the previous read, 16 times a second: inputs
 before their DSP blocks, outputs after their volume, and next to each source

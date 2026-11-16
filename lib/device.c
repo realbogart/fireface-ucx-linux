@@ -369,6 +369,19 @@ static void stream_dir(int card, const char *d, unsigned int *open, unsigned int
 	fclose(f);
 }
 
+/* A read-only counter of the card; -1 if the driver doesn't have it */
+static long card_counter(struct ucx_dev *dev, const char *name)
+{
+	snd_ctl_elem_value_t *value;
+
+	snd_ctl_elem_value_alloca(&value);
+	snd_ctl_elem_value_set_interface(value, SND_CTL_ELEM_IFACE_CARD);
+	snd_ctl_elem_value_set_name(value, name);
+	if (snd_ctl_elem_read(dev->ctl, value) < 0)
+		return -1;
+	return snd_ctl_elem_value_get_integer(value, 0);
+}
+
 void ucx_dev_stream(struct ucx_dev *dev, struct ucx_stream_info *info)
 {
 	static const char *const dirs[] = { "p", "c" };
@@ -395,6 +408,8 @@ void ucx_dev_stream(struct ucx_dev *dev, struct ucx_stream_info *info)
 			info->urb_blocks = ucx_urb_blocks_used(info->urb_blocks);
 		fclose(f);
 	}
+	info->errors = card_counter(dev, "Stream Errors");
+	info->restarts = card_counter(dev, "Stream Restarts");
 }
 
 unsigned int ucx_round_trip(unsigned int rate, unsigned int urb_blocks)

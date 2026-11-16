@@ -1402,9 +1402,32 @@ static int ucx_hwdep_init(struct ucx *ucx)
  */
 #define UCX_EVENT_BYTES		8
 
+/* The unit's burst at a stream start lasts about 17 ms; this leaves room */
+#define UCX_EVENT_START_MS	100
+
 static void ucx_log_event(struct ucx *ucx, u32 w0, u32 w1)
 {
 	dev_info(&ucx->intf->dev, "event %08x %08x\n", w0, w1);
+}
+
+/*
+ * Count the stream errors the unit reports (UCX_EVENT_ERROR), as the
+ * Windows driver does while a stream runs, but not the burst every start
+ * brings. Nothing comes here while the streams run cleanly.
+ */
+static void ucx_count_events(struct ucx *ucx, const __le32 *buf, unsigned int words)
+{
+	unsigned int i;
+	u32 w;
+
+	if (!READ_ONCE(ucx->running) ||
+	    time_before(jiffies, READ_ONCE(ucx->started) + msecs_to_jiffies(UCX_EVENT_START_MS)))
+		return;
+	for (i = 0; i < words; i++) {
+		w = le32_to_cpu(buf[i]);
+		if ((w & (UCX_EVENT_RESTART | UCX_EVENT_ERROR)) == UCX_EVENT_ERROR)
+			atomic_inc(&ucx->unit_errors);
+	}
 }
 
 static void ucx_event_complete(struct urb *urb)
@@ -1420,6 +1443,7 @@ static void ucx_event_complete(struct urb *urb)
 	if (dsp_debug && urb->actual_length >= 4)
 		ucx_log_event(ucx, le32_to_cpu(buf[0]),
 			      urb->actual_length >= 8 ? le32_to_cpu(buf[1]) : 0);
+	ucx_count_events(ucx, buf, urb->actual_length / 4);
 	err = usb_submit_urb(urb, GFP_ATOMIC);
 	if (err)
 		ucx_urb_failed(ucx, &ucx->event_status, err, "device events");

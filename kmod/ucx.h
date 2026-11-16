@@ -92,6 +92,17 @@ struct ucx {
 	unsigned long err_window;	/* jiffies: start of the restart count */
 	unsigned int err_restarts;	/* restarts since err_window */
 
+	/*
+	 * Stream errors since the unit appeared, the two numbers of "Errors"
+	 * in the Windows Settings dialog: errors the unit reports on 0x8b
+	 * while the streams run (UCX_EVENT_ERROR), and restarts of the streams
+	 * after a failed URB (Windows: dev+0x81e8 and dev+0x81ec). Windows
+	 * zeroes them at every stream start; these only count up.
+	 */
+	atomic_t unit_errors;
+	atomic_t stream_restarts;
+	unsigned long started;		/* jiffies when the engine last started */
+
 	/* System sleep: interfaces suspended, and whether one was reset */
 	unsigned int pm_count;
 	bool pm_reset;

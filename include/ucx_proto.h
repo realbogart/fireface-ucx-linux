@@ -78,6 +78,21 @@
 #define UCX_EP_STATUS_IN	0x8b
 
 /*
+ * Flags of an event word on 0x8b (0x14000c530). Bit 31: the streams need a
+ * restart (Windows sets an event for its restart thread). Bit 30 without
+ * bit 31: a stream error the unit detected; Windows counts these while a
+ * stream runs (dev+0x81e8) and shows the count as the first number of
+ * "Errors" in its Settings dialog (returned by 0x1400166d0). Bit 29: a
+ * 16-bit value. The unit also sends a burst of bit-30 words, then bit-31
+ * words, for about 17 ms at every stream start (measured 2026-11-15).
+ * UNVERIFIED that bit-30 words come during a running stream on an error:
+ * no error has been seen while streaming.
+ */
+#define UCX_EVENT_RESTART	0x80000000u
+#define UCX_EVENT_ERROR		0x40000000u
+#define UCX_EVENT_VALUE		0x20000000u
+
+/*
  * Interface 5: audio over interrupt endpoints. wMaxPacketSize of each alt
  * equals ucx_bytes_per_block(), so one packet carries one block. The alt
  * setting is the speed class the driver keeps at dev+0x7ebc (1 single,

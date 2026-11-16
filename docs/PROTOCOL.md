@@ -210,9 +210,17 @@ words. `tools/ucxdsp.py` wraps it.
 ## Still unknown
 
 - Interface 0.
-- The events on `0x8b`. At every stream start the unit sends a burst of
-  about 17 ms: words with bit 30 set and a frame counter in bits 15:0
-  (+12 per word at 48 kHz), bit 31 set in its second part. Nothing after.
+- The events on `0x8b`, partly. At every stream start the unit sends a
+  burst of about 17 ms: words with bit 30 set and a frame counter in bits
+  15:0 (+12 per word at 48 kHz), bit 31 set in its second part. Nothing
+  after while the streams run cleanly. In the Windows driver
+  (`0x14000c530`) bit 31 wakes its stream restart, bit 30 alone counts a
+  stream error (`dev+0x81e8`, the first number of "Errors" in the Settings
+  dialog, returned by `0x1400166d0`; the second, `dev+0x81ec`, counts
+  restarts in `0x14000ccb0`), and bit 29 carries a 16-bit value. The driver
+  counts bit-30 words from 100 ms after a start (control `Stream Errors`)
+  and its own restarts (`Stream Restarts`). Not yet seen: a bit-30 word
+  during a running stream.
 - Requests `0x16` and `0x1b`: why Windows' clock words work for Windows.
 - Registers with no effect found: inputs `0x03`–`0x06`, outputs `0x05`/`0x06`,
   `0x3d00`, `0x3d02`–`0x3d04`, `0x3d43`–`0x3d46`, the `0x3fxx` status words.
