@@ -72,8 +72,17 @@ not seen, that silences them, so start from a file in that case.
    return.
 5. **Hardware.** Clock, digital outputs, the three shared analog levels, EQ+D
    record, output mutes. To the right: what the unit says about its clock
-   (rate, active source, lock and sync of the three inputs), and how much of
-   the mixer the driver knows.
+   (rate, active source, lock and sync of the three inputs), the streams,
+   and how much of the mixer the driver knows.
+
+   The streams are shown, not set: their rate, period and buffer belong to
+   the program that opened them (PipeWire's `clock.rate` and
+   `clock.quantum`, or a JACK or ALSA program's own settings), and
+   `urb_blocks` is a module parameter of the driver (2 or 4, read when a
+   stream starts). The round trip is the unit's and the driver's part of a
+   loopback, from measurements, for that rate and `urb_blocks`; the
+   program's buffer comes on top. There is no dropout counter: the driver
+   doesn't count them (PipeWire does: `pw-top`, column ERR).
 
 Meters show the peak since the previous read, 16 times a second: inputs
 before their DSP blocks, outputs after their volume, and next to each source

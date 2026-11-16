@@ -184,6 +184,21 @@ void ucx_dev_close(struct ucx_dev *dev);
 int ucx_dev_read(struct ucx_dev *dev, struct ucx_dev_state *state, char *err, size_t errlen);
 /* Sample rate of the running stream, 0 if none is open */
 unsigned int ucx_dev_rate(struct ucx_dev *dev);
+
+/*
+ * The streams as the driver runs them: what the client that opened them
+ * (PipeWire, JACK, an ALSA program) asked for, in frames
+ */
+struct ucx_stream_info {
+	struct {
+		bool open;
+		unsigned int rate, channels, period, buffer;
+	} dir[2];			/* 0 playback, 1 capture */
+	int urb_blocks;			/* as the driver uses it (2 or 4), -1 if unreadable */
+};
+void ucx_dev_stream(struct ucx_dev *dev, struct ucx_stream_info *info);
+/* Frames of a loopback round trip in the unit and driver, without the ALSA buffer (measured) */
+unsigned int ucx_round_trip(unsigned int rate, unsigned int urb_blocks);
 /* Channels per direction at @rate: 18, 14 or 12 */
 unsigned int ucx_rate_channels(unsigned int rate);
 

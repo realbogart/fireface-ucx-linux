@@ -102,6 +102,20 @@ int main(void)
 	       UCX_DSP_WORD_REG(ucx_dsp_word(UCX_DSP_DUMP_REQUEST)), 0x3f99);
 	expect(UCX_DSP_WORD_REG(ucx_dsp_output_vol_cmd(0, -650)) == UCX_DSP_PHYS_INPUTS << 8,
 	       "volume word", UCX_DSP_WORD_REG(ucx_dsp_output_vol_cmd(0, -650)), 0);
+	/* Loopback round trips measured with looptest (NOTES 2026-11-11/12) */
+	{
+		static const struct { unsigned int rate, blocks, frames; } rt[] = {
+			{ 32000, 2, 106 }, { 44100, 2, 106 }, { 48000, 2, 106 }, { 48000, 4, 138 },
+			{ 96000, 2, 176 }, { 96000, 4, 240 }, { 192000, 2, 320 }, { 192000, 4, 448 },
+			{ 48000, 1, 106 }, { 48000, 7, 138 },	/* the parameter's other values */
+		};
+		unsigned int i;
+
+		for (i = 0; i < sizeof(rt) / sizeof(*rt); i++)
+			expect(ucx_round_trip_frames(rt[i].rate, rt[i].blocks) == rt[i].frames,
+			       "round trip", ucx_round_trip_frames(rt[i].rate, rt[i].blocks),
+			       rt[i].frames);
+	}
 	if (!failed)
 		puts("proto tests passed");
 	return failed;

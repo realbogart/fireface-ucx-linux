@@ -11,13 +11,11 @@
 #include "ucx_proto.h"
 
 /*
- * Most blocks per URB (the urb_blocks parameter). A block is 8/16/32 frames
- * at single/double/quad speed, so it is always the same slice of time:
- * 1/6000 s, 0.167 ms.
+ * UCX_URB_BLOCKS (most blocks per URB, the urb_blocks parameter) and
+ * UCX_PLAY_URBS (playback URBs kept queued per endpoint) are in ucx_proto.h,
+ * which the tools share. A block is 8/16/32 frames at single/double/quad
+ * speed, so it is always the same slice of time: 1/6000 s, 0.167 ms.
  */
-#define UCX_URB_BLOCKS		4
-/* Playback URBs kept queued per endpoint; see urb_blocks in ucx_pcm.c */
-#define UCX_PLAY_URBS		2
 /* Endpoint pairs carrying audio: two at quad speed */
 #define UCX_MAX_PAIRS		2
 /* The largest block is double speed's (ucx_bytes_per_block()) */

@@ -564,6 +564,36 @@ static inline unsigned int ucx_stream_pairs(unsigned int rate)
 }
 
 /*
+ * The Linux driver's stream queue (not the Windows driver's). Playback keeps
+ * UCX_PLAY_URBS URBs of urb_blocks blocks queued ahead of the unit; the
+ * urb_blocks module parameter takes 2 (default) or 4, anything from 4 up
+ * meaning 4 and anything below 2.
+ */
+#define UCX_PLAY_URBS		2
+#define UCX_URB_BLOCKS		4
+
+static inline unsigned int ucx_urb_blocks_used(unsigned int urb_blocks)
+{
+	return urb_blocks >= UCX_URB_BLOCKS ? UCX_URB_BLOCKS : 2;
+}
+
+/*
+ * Round trip of an analog loopback through the unit and the driver, in
+ * frames, without the ALSA buffer: the unit's own part (converters and
+ * FIFOs: 74/112/192 frames at single/double/quad speed) plus the playback
+ * queue. Measured with tools/looptest at 32k-192k, every combination of
+ * speed class and urb_blocks 2/4 (106/138, 176/240, 320/448 frames), and
+ * through PipeWire with jack_iodelay at 32k-48k (105 frames).
+ */
+static inline unsigned int ucx_round_trip_frames(unsigned int rate, unsigned int urb_blocks)
+{
+	static const unsigned int unit[] = { 0, 74, 112, 192 };
+
+	return unit[ucx_speed_class(rate)] +
+	       UCX_PLAY_URBS * ucx_urb_blocks_used(urb_blocks) * ucx_frames_per_block(rate);
+}
+
+/*
  * Payload format, verified on hardware at 48 kHz (`ucxctl stream-in`):
  * no per-packet header, frames interleaved, each sample a little-endian
  * int32 with 24 valid bits at the top (ALSA S32_LE, msbits 24). The low byte

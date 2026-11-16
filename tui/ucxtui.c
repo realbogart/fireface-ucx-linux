@@ -202,6 +202,7 @@ static float shown[sizeof(struct ucx_meters) / sizeof(int)];
 static struct ucx_status status;
 static bool status_ok;
 static unsigned int stream_rate;
+static struct ucx_stream_info stream;
 static bool live, live_dirty;
 static long long last_open, last_meter, last_state, last_status;
 
@@ -645,6 +646,7 @@ static bool device_sync(void)
 		last_status = last_state;
 	}
 	stream_rate = ucx_dev_rate(dev);
+	ucx_dev_stream(dev, &stream);
 	diff();
 	return true;
 }
@@ -1077,6 +1079,36 @@ static void build_effects(void)
 	add_missing(1, false, -1, "echo.");
 }
 
+/*
+ * The streams: set by whoever opened them (PipeWire's quantum and rate, a
+ * JACK or ALSA program's buffer), not by the unit, so shown and not edited
+ */
+static void build_stream(void)
+{
+	static const char *const names[] = { "Playback", "Capture" };
+	unsigned int rate = 0, frames, i;
+
+	add(R_HEAD, 1, "STREAM");
+	for (i = 0; i < 2; i++) {
+		if (!stream.dir[i].open) {
+			add_note(1, names[i], "not open")->colour = C_DIM;
+			continue;
+		}
+		rate = stream.dir[i].rate;
+		add_note(1, names[i], "%u ch, period %u, buffer %u", stream.dir[i].channels,
+			 stream.dir[i].period, stream.dir[i].buffer);
+	}
+	if (stream.urb_blocks < 0) {
+		add_note(1, "urb_blocks", "-")->colour = C_FAINT;
+		return;
+	}
+	add_note(1, "urb_blocks", "%d", stream.urb_blocks);
+	if (!rate)
+		return;
+	frames = ucx_round_trip(rate, stream.urb_blocks);
+	add_note(1, "Round trip", "%u frames, %.2f ms", frames, frames * 1000.0 / rate);
+}
+
 static void sync_note(const char *label, int input)
 {
 	uint32_t colour = C_DIM;
@@ -1140,6 +1172,8 @@ static void build_hardware(void)
 	sync_note("S/PDIF in", UCX_SYNC_SPDIF);
 	sync_note("Optical in", UCX_SYNC_OPTICAL);
 	sync_note("Word clock in", UCX_SYNC_WORD);
+	add(R_GAP, 1, NULL);
+	build_stream();
 	add(R_GAP, 1, NULL);
 	add(R_HEAD, 1, "WHAT THE DRIVER KNOWS");
 	for (out = 0; out < UCX_MIX_OUTS; out++)

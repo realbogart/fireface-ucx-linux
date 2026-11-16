@@ -57,7 +57,7 @@ static const struct snd_pcm_hardware ucx_pcm_hw = {
 
 static unsigned int ucx_urb_blocks(void)
 {
-	return urb_blocks >= UCX_URB_BLOCKS ? UCX_URB_BLOCKS : 2;
+	return ucx_urb_blocks_used(urb_blocks);
 }
 
 static struct ucx_stream *ucx_stream(struct ucx *ucx, int dir)

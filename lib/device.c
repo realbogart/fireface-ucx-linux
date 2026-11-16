@@ -349,6 +349,59 @@ unsigned int ucx_dev_rate(struct ucx_dev *dev)
 	return rate;
 }
 
+/* hw_params of one direction; "closed" when no stream is set up */
+static void stream_dir(int card, const char *d, unsigned int *open, unsigned int v[4])
+{
+	static const char *const keys[] = { "rate: %u", "channels: %u", "period_size: %u",
+					    "buffer_size: %u" };
+	char path[64], line[64];
+	unsigned int i;
+	FILE *f;
+
+	snprintf(path, sizeof(path), "/proc/asound/card%d/pcm0%s/sub0/hw_params", card, d);
+	f = fopen(path, "r");
+	if (!f)
+		return;
+	while (fgets(line, sizeof(line), f))
+		for (i = 0; i < 4; i++)
+			if (sscanf(line, keys[i], &v[i]) == 1)
+				*open = 1;
+	fclose(f);
+}
+
+void ucx_dev_stream(struct ucx_dev *dev, struct ucx_stream_info *info)
+{
+	static const char *const dirs[] = { "p", "c" };
+	unsigned int i, open, v[4];
+	FILE *f;
+
+	memset(info, 0, sizeof(*info));
+	for (i = 0; i < 2; i++) {
+		open = 0;
+		memset(v, 0, sizeof(v));
+		stream_dir(dev->card, dirs[i], &open, v);
+		info->dir[i].open = open && v[0];
+		info->dir[i].rate = v[0];
+		info->dir[i].channels = v[1];
+		info->dir[i].period = v[2];
+		info->dir[i].buffer = v[3];
+	}
+	info->urb_blocks = -1;
+	f = fopen("/sys/module/snd_fireface_ucx/parameters/urb_blocks", "r");
+	if (f) {
+		if (fscanf(f, "%d", &info->urb_blocks) != 1)
+			info->urb_blocks = -1;
+		else
+			info->urb_blocks = ucx_urb_blocks_used(info->urb_blocks);
+		fclose(f);
+	}
+}
+
+unsigned int ucx_round_trip(unsigned int rate, unsigned int urb_blocks)
+{
+	return ucx_round_trip_frames(rate, urb_blocks);
+}
+
 unsigned int ucx_rate_channels(unsigned int rate)
 {
 	return rate ? ucx_channels(rate) : UCX_PCMS;
