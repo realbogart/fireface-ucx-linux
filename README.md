@@ -56,7 +56,8 @@ below), the newer UCX II, and other Fireface models.
 ### NixOS
 
 Add the flake as an input and import its module, which builds the driver
-for your kernel and installs the tools, the udev rule and the user service:
+for your kernel and installs the tools, the udev rule, the user service and
+the WirePlumber latency rule:
 
 ```nix
 # flake.nix
@@ -71,7 +72,8 @@ imports = [ inputs.fireface-ucx.nixosModules.default ];
 ```sh
 make                          # driver and tools
 sudo make install-module      # the driver, into /lib/modules/$(uname -r)/updates
-sudo make install PREFIX=/usr # ucxcfg, ucxtui, udev rule, systemd user unit
+sudo make install PREFIX=/usr # ucxcfg, ucxtui, udev rule, systemd user unit,
+                              # WirePlumber latency rule
 ```
 
 The driver loads by itself when the unit is plugged in. Rebuild and
@@ -85,6 +87,16 @@ application can use it.
 
 With **PipeWire**, choose the **Pro Audio** profile for the card. It gives
 all 18 channels, and its latency is constant (the default profile's drifts).
+It runs the unit at 32, 44.1 or 48 kHz; the higher rates have fewer channels,
+which the profile doesn't follow.
+
+PipeWire reports only its own buffering, not the 105 frames the unit and the
+driver add to a round trip. The installed WirePlumber rule
+([`wireplumber/51-fireface-ucx-latency.conf`](wireplumber/51-fireface-ucx-latency.conf))
+adds them, so a DAW that compensates for reported latency lines up a
+recording with what it played; don't also set a manual recording offset in
+the DAW. The values are for the driver's default `urb_blocks=2`; the file
+says what to change for 4.
 
 **`ucxtui`** is the mixer: inputs, outputs, routing, effects and settings,
 with meters. Changes are sent when you apply them, or as you make them in

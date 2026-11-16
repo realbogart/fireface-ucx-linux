@@ -27,6 +27,7 @@ stdenv.mkDerivation {
       ../examples
       ../udev
       ../systemd
+      ../wireplumber
     ];
   };
 

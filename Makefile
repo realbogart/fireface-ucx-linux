@@ -83,6 +83,8 @@ install-ucxcfg: build/ucxcfg build/ucxtui
 	install -Dm644 examples/desktop.json $(DESTDIR)$(PREFIX)/share/doc/ucxcfg/desktop.json
 	install -Dm644 udev/70-snd-fireface-ucx.rules \
 		$(DESTDIR)$(PREFIX)/lib/udev/rules.d/70-snd-fireface-ucx.rules
+	install -Dm644 wireplumber/51-fireface-ucx-latency.conf \
+		$(DESTDIR)$(PREFIX)/share/wireplumber/wireplumber.conf.d/51-fireface-ucx-latency.conf
 	@mkdir -p $(DESTDIR)$(PREFIX)/lib/systemd/user
 	sed -e 's|@BINDIR@|$(PREFIX)/bin|' -e 's|@SLEEP@|$(SLEEP)|' systemd/ucxcfg-apply.service.in \
 		>$(DESTDIR)$(PREFIX)/lib/systemd/user/ucxcfg-apply.service
@@ -99,7 +101,7 @@ module:
 	$(MAKE) -C kmod
 
 # As root, after `make`: install-module installs the kernel module, install
-# the tools with their udev rule and systemd user unit
+# the tools with their udev rule, systemd user unit and WirePlumber latency rule
 install-module:
 	$(MAKE) -C kmod install
 
