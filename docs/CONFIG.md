@@ -10,7 +10,7 @@ ucxcfg check -p FILE         print FILE in its shortest form
 ucxcfg check -p --full FILE  print every channel and key, defaults included
 ucxcfg apply -n FILE         show what would change
 ucxcfg apply FILE            make the unit match FILE
-ucxcfg apply --push FILE     the same, then send all 720 mixer gains again
+ucxcfg apply --push FILE     apply with an unconditional write for every mixer gain
 ucxcfg apply                 apply your own config (below)
 ucxcfg dump [--full]         write what the driver knows as a config
 ```
@@ -154,6 +154,15 @@ driver loads, playback routes are unknown and input routes come from a record
 the driver keeps in the unit. `apply` writes what is unknown or different;
 `apply --push` writes all of it, and is the way to be sure the unit and the
 file agree (after power-up, or after TotalMix has had the unit).
+
+Apply engages requested mutes, including the global mute enable, before
+changing preamp gain or DSP settings. It releases mutes after setting routes
+and output volumes. With `--push`, it clears every unwanted route even if
+the driver already shows it as off. If preamp, DSP or other hardware
+settings also change, the push briefly clears the whole matrix while it
+writes those settings. It writes active routes with their requested polarity
+before raising output faders. A failed write stops the apply at that point.
+Rerun the same command to finish from the partially applied state.
 
 ### Recording what the computer plays
 
@@ -322,8 +331,9 @@ main-out / phones assignment.
 
 `make check` runs the file format tests (`tests/config.sh`: every `ok` file
 must print and load back to the same text, every `bad` one must be refused
-with the expected message), the protocol helpers and the TUI's edits. No
-device is needed.
+with the expected message), the protocol helpers, the TUI's edits, and the
+apply planner. The planner tests check mute ordering and interrupt and retry
+a forced restore with stale mixer gains. No device is needed.
 
 `make fuzz` runs libFuzzer on the parser (`tests/fuzz_config.c`) for
 `FUZZ_TIME` seconds (60 by default). Every input must either be refused with a

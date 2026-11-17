@@ -22,8 +22,9 @@ The screen shows the config, not the unit. Changes stay in the program until
 one of:
 
 - **`a`, apply.** Lists every value that differs from what the driver holds
-  for the unit; Enter sends them, in the order `ucxcfg apply` uses (nothing
-  gets louder on the way). `p` there also sends all 720 mixer gains again,
+  for the unit; Enter sends them, in the order `ucxcfg apply` uses. Requested output
+  mutes go on before gain changes and come off after the final levels are set.
+  `p` writes all 720 mixer gains during the apply,
   like `ucxcfg apply --push`.
 - **`L`, live.** From then on every change goes to the unit as it is made.
   If the unit differs when you press `L`, the same list comes up first.

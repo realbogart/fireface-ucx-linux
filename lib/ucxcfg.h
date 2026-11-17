@@ -161,16 +161,17 @@ struct ucx_dev_state {
 	int linear[UCX_MIX_OUTS][UCX_SOURCES];	/* mix as the driver has it; -1 unknown */
 };
 
-enum ucx_op_kind { UCX_OP_VOLUME, UCX_OP_MIX, UCX_OP_SETTING, UCX_OP_LINK, UCX_OP_INVERT };
+enum ucx_op_kind { UCX_OP_VOLUME, UCX_OP_MIX, UCX_OP_SETTING, UCX_OP_LINK, UCX_OP_INVERT,
+		   UCX_OP_PUSH_MIX };
 
 /* One value to write, with the device's old value for reporting */
 struct ucx_op {
 	enum ucx_op_kind kind;
-	int phase;	/* 0..6, see ucx_plan_make() */
+	int phase;	/* apply ordering and write batching */
 	int out;	/* volume, mix; link: the pair */
 	int src;	/* mix; link: 1 for an input pair, 0 for an output pair */
 	int setting;
-	int old, new;	/* config units */
+	int old, new;	/* config units; PUSH_MIX: old linear magnitude, new signed linear gain */
 };
 
 struct ucx_plan {
@@ -238,6 +239,9 @@ int ucx_dev_status(struct ucx_dev *dev, struct ucx_status *status, char *err, si
 /* The writes that take the device from @cur to @want, in a safe order */
 void ucx_plan_make(const struct ucx_dev_state *cur, const struct ucx_config *want,
 		   struct ucx_plan *plan);
+/* Same ordering, with an unconditional DSP write for each of the 720 routes. */
+void ucx_plan_make_push(const struct ucx_dev_state *cur, const struct ucx_config *want,
+			struct ucx_plan *plan);
 int ucx_dev_apply(struct ucx_dev *dev, const struct ucx_plan *plan, char *err, size_t errlen);
 /*
  * Send every mixer gain of @want again, also those the driver believes are

@@ -24,6 +24,7 @@ stdenv.mkDerivation {
       ../tests/config.sh
       ../tests/proto.c
       ../tests/doc.c
+      ../tests/plan.c
       ../examples
       ../udev
       ../systemd

@@ -2,12 +2,12 @@
 /*
  * Device access through snd-fireface-ucx; see ucxcfg.h.
  *
- * Writes go through the ALSA controls, not the hwdep device: the driver then
+ * Ordinary settings go through ALSA controls. The driver then
  * keeps its register table right, skips values the device already has, and
  * tells other clients (alsamixer, a later TUI) about the change. The hwdep
  * device is read for what the controls can't say: whether the driver knows a
  * register at all (an unknown one reads as the control's minimum). It is
- * written only for the stereo link registers; see reg_write().
+ * written for stereo links and for unconditional mixer writes during a push.
  */
 #include <alsa/asoundlib.h>
 #include <errno.h>
@@ -230,6 +230,9 @@ static int words_write(struct ucx_dev *dev, const uint32_t *words, unsigned int 
 		close(fd);
 	if (ret < 0)
 		return -1;
+	if ((size_t)ret != n * sizeof(*words))
+		return fail(err, errlen, "%s: short DSP write (%zd of %zu bytes)", dev->hwdep,
+			    ret, n * sizeof(*words));
 	usleep(n * WORD_PACE_US);
 	return 0;
 }
@@ -265,8 +268,7 @@ int ucx_dev_read(struct ucx_dev *dev, struct ucx_dev_state *state, char *err, si
 	int out, src, i, fd;
 
 	/*
-	 * The register table: one word per register the driver knows, all in
-	 * one read. Opened read-only: this library never sends DSP words itself
+	 * The register table: one word per known register, all in one read.
 	 */
 	fd = open(dev->hwdep, O_RDONLY | O_CLOEXEC);
 	got = fd < 0 ? -1 : read(fd, words, sizeof(words));
@@ -556,94 +558,163 @@ static bool autoset_holds(const struct ucx_config *cur, const struct ucx_config 
 	return false;
 }
 
-static void ucx_plan_levels(const struct ucx_dev_state *cur, const struct ucx_config *want,
-			    struct ucx_plan *plan);
-
 /*
- * Order, so that no output is ever louder than it is before or after:
- *  0. stereo links that go off (or are unknown): the two channels of a
- *     linked pair can't be given different values
- *  1. output volumes that go down (an unknown one goes to -65 dB)
- *  2. mixer gains that go down or off
- *  3. input and output settings (every path is now at the lower of its old
- *     and new level)
- *  4. mixer gains that go up, or whose old value is unknown; then the
- *     phase of each route (the driver can only flip a gain it knows)
- *  5. output volumes that go up
- *  6. stereo links that go on: both channels have the same values by now,
- *     so linking changes nothing audible
- * The device applies words in the order sent, though sometimes late.
+ * Keep mutes effective across changes to the upstream signal. The global
+ * switch enables individual mutes with 1; an output Playback Switch mutes
+ * with 0. Both releases come after the final routes and fader levels.
  */
-void ucx_plan_make(const struct ucx_dev_state *cur, const struct ucx_config *want,
-		   struct ucx_plan *plan)
+enum apply_phase {
+	UNLINK, ENGAGE_MUTES, LOWER_FADERS, CLEAR_ROUTES, LOWER_ROUTES,
+	SETTINGS, RAISE_ROUTES, RAISE_FADERS, RELEASE_MUTES, LINK
+};
+
+static enum apply_phase setting_phase(const struct ucx_setting *setting, int value)
 {
-	int i, phase;
+	if (setting->output && !strcmp(setting->key, "mute"))
+		return value ? RELEASE_MUTES : ENGAGE_MUTES;
+	if (!strcmp(setting->key, "mute-enable"))
+		return value ? ENGAGE_MUTES : RELEASE_MUTES;
+	return SETTINGS;
+}
 
-	plan->n = 0;
-	for (phase = 0; phase <= 6; phase += 6) {
-		for (i = 0; i < 2 * UCX_PAIRS; i++) {
-			int pair = i % UCX_PAIRS, input = i >= UCX_PAIRS;
-			int old = input ? cur->cfg.link_in[pair] : cur->cfg.link_out[pair];
-			int new = input ? want->link_in[pair] : want->link_out[pair];
+static void plan_links(const struct ucx_dev_state *cur, const struct ucx_config *want,
+		       struct ucx_plan *plan, enum apply_phase phase)
+{
+	for (int i = 0; i < 2 * UCX_PAIRS; i++) {
+		int pair = i % UCX_PAIRS, input = i >= UCX_PAIRS;
+		int old = input ? cur->cfg.link_in[pair] : cur->cfg.link_out[pair];
+		int new = input ? want->link_in[pair] : want->link_out[pair];
 
-			if (phase == 0 && old != 0 && (new == 0 || old == UCX_UNKNOWN))
-				add_op(plan, UCX_OP_LINK, phase, pair, input, 0, old, 0);
-			if (phase == 6 && new == 1 && old != 1)
-				add_op(plan, UCX_OP_LINK, phase, pair, input, 0,
-				       old == UCX_UNKNOWN ? 0 : old, 1);
-		}
-		if (phase == 0)
-			ucx_plan_levels(cur, want, plan);
+		if (phase == UNLINK && old != 0 && (new == 0 || old == UCX_UNKNOWN))
+			add_op(plan, UCX_OP_LINK, phase, pair, input, 0, old, 0);
+		if (phase == LINK && new == 1 && old != 1)
+			add_op(plan, UCX_OP_LINK, phase, pair, input, 0,
+			       old == UCX_UNKNOWN ? 0 : old, 1);
 	}
 }
 
-static void ucx_plan_levels(const struct ucx_dev_state *cur, const struct ucx_config *want,
-			    struct ucx_plan *plan)
+static void plan_faders(const struct ucx_dev_state *cur, const struct ucx_config *want,
+			struct ucx_plan *plan, enum apply_phase phase)
 {
-	int out, src, i, phase;
+	for (int out = 0; out < UCX_OUTPUTS; out++) {
+		int old = cur->cfg.volume[out], new = want->volume[out];
 
-	for (phase = 1; phase <= 5; phase++) {
-		for (out = 0; out < UCX_MIX_OUTS && phase != 3; out++) {
-			/* The FX send rows have no volume: they never change in phases 1 and 5 */
-			int old = out < UCX_OUTPUTS ? cur->cfg.volume[out] : 0;
-			int new = out < UCX_OUTPUTS ? want->volume[out] : 0;
-			bool down = new < old;
+		if (old == UCX_UNKNOWN) {
+			if (phase == LOWER_FADERS)
+				add_op(plan, UCX_OP_VOLUME, phase, out, 0, 0, old, UCX_VOL_MIN);
+			old = UCX_VOL_MIN;
+		}
+		if (old != new && (new < old) == (phase == LOWER_FADERS))
+			add_op(plan, UCX_OP_VOLUME, phase, out, 0, 0, old, new);
+	}
+}
 
-			/*
-			 * An unknown volume may be above or below the new one, and
-			 * the output's routes are about to change: close it first
-			 * and open it last
-			 */
-			if (old == UCX_UNKNOWN) {
-				if (phase == 1)
-					add_op(plan, UCX_OP_VOLUME, phase, out, 0, 0, old, UCX_VOL_MIN);
-				old = UCX_VOL_MIN;
-				down = false;
+static void plan_routes(const struct ucx_dev_state *cur, const struct ucx_config *want,
+			struct ucx_plan *plan, enum apply_phase phase, bool push, bool clear_all)
+{
+	for (int out = 0; out < UCX_MIX_OUTS; out++) {
+		for (int src = 0; src < UCX_SOURCES; src++) {
+			int have = cur->linear[out][src];
+			int need = ucx_gain_to_linear(want->mix[out][src]);
+			enum apply_phase when = RAISE_ROUTES;
+
+			if (clear_all && phase == CLEAR_ROUTES)
+				need = 0;
+			if (!need)
+				when = CLEAR_ROUTES;
+			else if (!clear_all && need < have)
+				when = LOWER_ROUTES;
+			if (phase != when)
+				continue;
+			if (push) {
+				/* The DSP word sets level and polarity together, even if
+				 * the driver already holds the requested coefficient. */
+				int gain = want->invert[out][src] ? -need : need;
+
+				add_op(plan, UCX_OP_PUSH_MIX, phase, out, src, 0, have, gain);
+			} else if (have < 0 || !same_gain(have, need)) {
+				add_op(plan, UCX_OP_MIX, phase, out, src, 0,
+				       cur->cfg.mix[out][src], want->mix[out][src]);
 			}
-			if ((phase == 1 || phase == 5) && old != new && down == (phase == 1))
-				add_op(plan, UCX_OP_VOLUME, phase, out, 0, 0, old, new);
-			for (src = 0; src < UCX_SOURCES && (phase == 2 || phase == 4); src++) {
-				int have = cur->linear[out][src];
-				int need = ucx_gain_to_linear(want->mix[out][src]);
-
-				if (have >= 0 && same_gain(have, need))
-					continue;
-				/* Unknown and wanted off can only go down */
-				down = have < 0 ? need == 0 : need < have;
-				if (down == (phase == 2))
-					add_op(plan, UCX_OP_MIX, phase, out, src, 0,
-					       cur->cfg.mix[out][src], want->mix[out][src]);
-			}
-			for (src = 0; src < UCX_SOURCES && phase == 4; src++)
+		}
+		if (!push && phase == RAISE_ROUTES) {
+			for (int src = 0; src < UCX_SOURCES; src++)
 				if (want->mix[out][src] != UCX_MIX_OFF &&
 				    cur->cfg.invert[out][src] != want->invert[out][src])
 					add_op(plan, UCX_OP_INVERT, phase, out, src, 0,
 					       cur->cfg.invert[out][src], want->invert[out][src]);
 		}
-		for (i = 0; i < UCX_SETTINGS && phase == 3; i++)
-			if (cur->cfg.set[i] != want->set[i] && !autoset_holds(&cur->cfg, want, i))
-				add_op(plan, UCX_OP_SETTING, phase, 0, 0, i, cur->cfg.set[i], want->set[i]);
 	}
+}
+
+static bool setting_changes(const struct ucx_dev_state *cur, const struct ucx_config *want,
+			    int i)
+{
+	return cur->cfg.set[i] != want->set[i] && !autoset_holds(&cur->cfg, want, i);
+}
+
+static void make_plan(const struct ucx_dev_state *cur, const struct ucx_config *want,
+		      struct ucx_plan *plan, bool push)
+{
+	bool clear_all = false;
+
+	/* During a push the live gain can differ from the cache in either
+	 * direction. Keep routes closed across preamp, DSP and reference-level
+	 * changes; an already matching setup needs no interruption. */
+	for (int i = 0; push && i < UCX_SETTINGS; i++) {
+		if (setting_phase(&ucx_settings[i], want->set[i]) == SETTINGS &&
+		    setting_changes(cur, want, i)) {
+			clear_all = true;
+			break;
+		}
+	}
+	plan->n = 0;
+	for (enum apply_phase phase = UNLINK; phase <= LINK; phase++) {
+		switch (phase) {
+		case UNLINK:
+		case LINK:
+			plan_links(cur, want, plan, phase);
+			break;
+		case ENGAGE_MUTES:
+		case SETTINGS:
+		case RELEASE_MUTES:
+			for (int i = 0; i < UCX_SETTINGS; i++)
+				if (setting_phase(&ucx_settings[i], want->set[i]) == phase &&
+				    setting_changes(cur, want, i))
+					add_op(plan, UCX_OP_SETTING, phase, 0, 0, i,
+					       cur->cfg.set[i], want->set[i]);
+			break;
+		case LOWER_FADERS:
+		case RAISE_FADERS:
+			plan_faders(cur, want, plan, phase);
+			break;
+		case CLEAR_ROUTES:
+		case LOWER_ROUTES:
+		case RAISE_ROUTES:
+			plan_routes(cur, want, plan, phase, push, clear_all);
+			break;
+		}
+	}
+}
+
+void ucx_plan_make(const struct ucx_dev_state *cur, const struct ucx_config *want,
+		   struct ucx_plan *plan)
+{
+	make_plan(cur, want, plan, false);
+}
+
+void ucx_plan_make_push(const struct ucx_dev_state *cur, const struct ucx_config *want,
+			struct ucx_plan *plan)
+{
+	make_plan(cur, want, plan, true);
+}
+
+static uint32_t mix_word(int out, int src, int gain)
+{
+	int dev_out = out < UCX_OUTPUTS ? out : UCX_DSP_FX_OUT + out - UCX_OUTPUTS;
+	int dev_src = src < UCX_SRC_INPUT ? UCX_DSP_PLAYBACK + src : src - UCX_SRC_INPUT;
+
+	return ucx_dsp_mix_cmd(dev_out, dev_src, gain);
 }
 
 int ucx_dev_apply(struct ucx_dev *dev, const struct ucx_plan *plan, char *err, size_t errlen)
@@ -711,6 +782,22 @@ int ucx_dev_apply(struct ucx_dev *dev, const struct ucx_plan *plan, char *err, s
 			if (elem_rw(dev, name, values, UCX_PCMS, true, err, errlen) < 0)
 				return -1;
 			break;
+		case UCX_OP_PUSH_MIX: {
+			uint32_t words[UCX_HWDEP_DSP_MAX_WORDS];
+			unsigned int count = 0;
+
+			do {
+				const struct ucx_op *route = &plan->ops[n + count];
+
+				words[count++] = mix_word(route->out, route->src, route->new);
+			} while (count < UCX_HWDEP_DSP_MAX_WORDS && n + count < plan->n &&
+				 plan->ops[n + count].kind == UCX_OP_PUSH_MIX &&
+				 plan->ops[n + count].phase == op->phase);
+			if (words_write(dev, words, count, err, errlen))
+				return -1;
+			n += count - 1;
+			break;
+		}
 		case UCX_OP_MIX:
 			/*
 			 * One write per control: -1 leaves a gain alone, so this pass
@@ -757,18 +844,14 @@ int ucx_dev_push_mix(struct ucx_dev *dev, const struct ucx_config *want, char *e
 
 	for (on = 0; on <= 1; on++) {
 		for (out = 0; out < UCX_MIX_OUTS; out++) {
-			int dev_out = out < UCX_OUTPUTS ? out : UCX_DSP_FX_OUT + out - UCX_OUTPUTS;
-
 			for (src = 0; src < UCX_SOURCES; src++) {
 				int gain = ucx_gain_to_linear(want->mix[out][src]);
-				int dev_src = src < UCX_SRC_INPUT ? UCX_DSP_PLAYBACK + src :
-					src - UCX_SRC_INPUT;
 
 				if ((gain != 0) != on)
 					continue;
 				if (want->invert[out][src])
 					gain = -gain;
-				words[n++] = ucx_dsp_mix_cmd(dev_out, dev_src, gain);
+				words[n++] = mix_word(out, src, gain);
 				if (n == UCX_HWDEP_DSP_MAX_WORDS) {
 					if (words_write(dev, words, n, err, errlen))
 						return -1;
@@ -811,6 +894,11 @@ void ucx_op_describe(const struct ucx_op *op, char *buf, size_t len)
 		gain_format(op->new, new, sizeof(new));
 		snprintf(buf, len, "%s mix %s: %s -> %s", ucx_output_name(op->out),
 			 ucx_source_name(op->src), old, new);
+		break;
+	case UCX_OP_PUSH_MIX:
+		gain_format(ucx_gain_from_linear(abs(op->new)), new, sizeof(new));
+		snprintf(buf, len, "%s mix %s: force %s%s", ucx_output_name(op->out),
+			 ucx_source_name(op->src), new, op->new < 0 ? " inverted" : "");
 		break;
 	case UCX_OP_LINK:
 		ucx_pair_name(!op->src, op->out, new, sizeof(new));

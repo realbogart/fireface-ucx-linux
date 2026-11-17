@@ -41,6 +41,9 @@ build/ucxtui: $(TUI_SRCS) $(TUI_HDRS) build/libucx.a
 build/doc-test: tests/doc.c tui/doc.c tui/doc.h build/libucx.a
 	$(CC) $(CFLAGS) -Ilib -Itui -o $@ tests/doc.c tui/doc.c build/libucx.a $(ALSA_LIBS) $(JANSSON_LIBS) -lm
 
+build/plan-test: tests/plan.c build/libucx.a lib/ucxcfg.h
+	$(CC) $(CFLAGS) -Ilib -o $@ $< build/libucx.a $(ALSA_LIBS) $(JANSSON_LIBS) -lm
+
 build/proto-test: tests/proto.c include/ucx_proto.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -Iinclude -o $@ $< -lm
@@ -53,10 +56,11 @@ check-pcm:
 	python3 tests/pcm.py
 
 # File format and protocol helper tests; no device needed
-check: build/ucxcfg build/proto-test build/doc-test
+check: build/ucxcfg build/proto-test build/doc-test build/plan-test
 	tests/config.sh build/ucxcfg
 	build/proto-test
 	build/doc-test
+	build/plan-test
 
 # libFuzzer on the config parser (tests/fuzz_config.c); not part of all or
 # check. Needs clang and jansson only (lib/config.c, no ALSA, libusb or

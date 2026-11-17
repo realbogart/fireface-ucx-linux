@@ -590,6 +590,7 @@ static void diff(void)
 			pend_tab[TAB_OUTPUTS]++;
 			break;
 		case UCX_OP_MIX:
+		case UCX_OP_PUSH_MIX:
 		case UCX_OP_INVERT:
 			pend_mix[op->out][op->src] = true;
 			pend_ch[1][op->out]++;
@@ -672,13 +673,13 @@ static bool device_apply(bool push)
 {
 	char err[512];
 	unsigned int n;
-	int sent = 0;
 
 	if (!device_sync())
 		return false;
 	n = plan.n;
-	if (ucx_dev_apply(dev, &plan, err, sizeof(err)) ||
-	    (push && (sent = ucx_dev_push_mix(dev, &doc.s.cfg, err, sizeof(err))) < 0)) {
+	if (push)
+		ucx_plan_make_push(&dev_state, &doc.s.cfg, &plan);
+	if (ucx_dev_apply(dev, &plan, err, sizeof(err))) {
 		/* The unit may hold part of the plan now: show what is left */
 		if (live)
 			say(MSG_ERR, "Live is off: %s", err);
@@ -694,7 +695,7 @@ static bool device_apply(bool push)
 		ucx_op_describe(&plan.ops[0], err, sizeof(err));
 		say(MSG_WARN, "%u values still differ after the apply, first: %s", plan.n, err);
 	} else if (push) {
-		say(MSG_OK, "Applied %u changes and sent all %d mixer gains again", n, sent);
+		say(MSG_OK, "Applied %u changes and wrote all %d mixer gains", n, UCX_MIX_OUTS * UCX_SOURCES);
 	} else if (!live) {
 		say(MSG_OK, "Applied %u change%s: the unit matches", n, n == 1 ? "" : "s");
 	}
@@ -2516,7 +2517,7 @@ static void draw_apply(void)
 	i += text(i + 1, y + h - 2, 20, C_TEXT, C_PANEL, 0, apply_live ? "apply, go live" : "apply") + 4;
 	i += text(i, y + h - 2, 4, C_INK, C_ACCENT, ATTR_BOLD, " p ");
 	text(i + 1, y + h - 2, w - (i - x) - 14, C_TEXT, C_PANEL, 0,
-	     w >= 84 ? "apply, then send all 720 mixer gains again" : "apply + resend every gain");
+	     w >= 84 ? "apply with all 720 mixer gains" : "apply + resend every gain");
 	text_right(x + w - 2, y + h - 2, C_FAINT, C_PANEL, 0, "esc: back");
 }
 

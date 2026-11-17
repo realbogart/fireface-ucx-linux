@@ -32,7 +32,7 @@ static const char usage[] =
 	"what ucxcfg-apply.service applies whenever the unit appears.\n"
 	"  -c, --card NAME    ALSA card (default UCX)\n"
 	"  -n, --dry-run      apply: print what would change, write nothing\n"
-	"      --push         apply: then send every mixer gain again, also those the\n"
+	"      --push         apply: write every mixer gain, including those the\n"
 	"                     driver believes are right (the unit never reports its mixer)\n"
 	"  -p, --print        check: print the file in its shortest form\n"
 	"  -o, --output FILE  dump: write to FILE instead of standard output\n"
@@ -53,26 +53,34 @@ static bool verbose, quiet;
  */
 static void print_plan(const struct ucx_plan *plan)
 {
-	int unknown_off[UCX_MIX_OUTS] = { 0 };
 	char text[160];
 	unsigned int i;
-	int out;
 
 	for (i = 0; i < plan->n; i++) {
 		const struct ucx_op *op = &plan->ops[i];
+		bool force_off = op->kind == UCX_OP_PUSH_MIX && !op->new;
+		bool unknown_off = op->kind == UCX_OP_MIX && op->old == UCX_UNKNOWN &&
+				   op->new == UCX_MIX_OFF;
 
-		if (!verbose && op->kind == UCX_OP_MIX && op->old == UCX_UNKNOWN &&
-		    op->new == UCX_MIX_OFF) {
-			unknown_off[op->out]++;
-			continue;
+		if (!verbose && (force_off || unknown_off)) {
+			unsigned int first = i;
+
+			while (i + 1 < plan->n) {
+				const struct ucx_op *next = &plan->ops[i + 1];
+
+				if (next->kind != op->kind || next->out != op->out ||
+				    next->new != op->new || (unknown_off && next->old != UCX_UNKNOWN))
+					break;
+				i++;
+			}
+			printf(force_off ? "%s mix: force %u routes off\n" :
+					   "%s mix: %u unknown gains -> off\n",
+			       ucx_output_name(op->out), i - first + 1);
+		} else {
+			ucx_op_describe(op, text, sizeof(text));
+			puts(text);
 		}
-		ucx_op_describe(op, text, sizeof(text));
-		puts(text);
 	}
-	for (out = 0; out < UCX_MIX_OUTS; out++)
-		if (unknown_off[out])
-			printf("%s mix: %d unknown gains -> off\n", ucx_output_name(out),
-			       unknown_off[out]);
 }
 
 /*
@@ -124,7 +132,7 @@ static int cmd_apply(const char *card, const char *file, bool dry_run, bool push
 	struct ucx_config cfg;
 	struct ucx_dev *dev;
 	char err[512];
-	int ret = EXIT_IO, sent;
+	bool changes;
 
 	/* The whole file is checked before the device is even opened */
 	if (ucx_config_load(file, &cfg, err, sizeof(err))) {
@@ -138,30 +146,22 @@ static int cmd_apply(const char *card, const char *file, bool dry_run, bool push
 	if (ucx_dev_read(dev, &state, err, sizeof(err)))
 		goto fail;
 	ucx_plan_make(&state, &cfg, &plan);
+	changes = plan.n != 0;
+	if (push)
+		ucx_plan_make_push(&state, &cfg, &plan);
 	if (dry_run || verbose) {
 		print_plan(&plan);
 		note_rate(dev, &cfg);
 	}
 	if (dry_run) {
 		if (push)
-			printf("push: all %d mixer gains would be sent again\n",
+			printf("push: all %d mixer gains would be written\n",
 			       UCX_MIX_OUTS * UCX_SOURCES);
 		ucx_dev_close(dev);
-		return plan.n ? EXIT_CHANGES : EXIT_OK;
+		return changes ? EXIT_CHANGES : EXIT_OK;
 	}
 	if (ucx_dev_apply(dev, &plan, err, sizeof(err)))
 		goto fail;
-	/*
-	 * After the ordered apply, so that the driver's picture is the file's
-	 * and the push only corrects what the unit holds behind its back
-	 */
-	if (push) {
-		sent = ucx_dev_push_mix(dev, &cfg, err, sizeof(err));
-		if (sent < 0)
-			goto fail;
-		if (verbose)
-			printf("push: %d mixer gains sent again\n", sent);
-	}
 
 	/* Read back what the driver now holds: nothing may be left to do */
 	if (ucx_dev_read(dev, &state, err, sizeof(err)))
@@ -179,7 +179,7 @@ static int cmd_apply(const char *card, const char *file, bool dry_run, bool push
 fail:
 	fprintf(stderr, "ucxcfg: %s\n", err);
 	ucx_dev_close(dev);
-	return ret;
+	return EXIT_IO;
 }
 
 static int cmd_dump(const char *card, const char *output, bool assume_off, bool full)
