@@ -5,6 +5,7 @@
 #include <linux/mutex.h>
 #include <linux/spinlock.h>
 #include <linux/usb.h>
+#include <linux/wait.h>
 #include <sound/core.h>
 #include <sound/pcm.h>
 
@@ -45,6 +46,9 @@ struct ucx_stream {
 	struct urb *urbs[UCX_MAX_PAIRS][UCX_URBS_PER_EP];
 	/* Attached by trigger; NULL streams silence (playback) or drops data (capture) */
 	struct snd_pcm_substream *substream;
+	/* Period notifications that still hold a reference after dropping stream_lock */
+	atomic_t period_inflight;
+	wait_queue_head_t period_wait;
 	/*
 	 * URBs handled per pair since the engine started. URB n of both pairs
 	 * covers the same slice of time, so a substream attaches to both pairs
@@ -62,15 +66,22 @@ struct ucx_stream {
 	unsigned int period_pos;	/* frames since the last period boundary */
 };
 
+enum ucx_pcm_state {
+	UCX_PCM_STOPPED,
+	UCX_PCM_STARTING,
+	UCX_PCM_RUNNING,
+	UCX_PCM_FAILED,
+	UCX_PCM_SUSPENDED,
+};
+
 struct ucx {
 	struct usb_device *udev;
 	struct usb_interface *intf;
 	struct snd_card *card;
 	struct snd_pcm *pcm;
 
-	/* Engine state: running, rate, prepared, disconnected */
+	/* Serialize engine start/stop, prepare, and teardown */
 	struct mutex lock;
-	bool running;
 	bool disconnected;
 	unsigned int rate;
 	/* Stream layout at that rate, fixed while the engine runs */
@@ -78,18 +89,15 @@ struct ucx {
 	unsigned int pair_bytes;	/* bytes per frame on one endpoint */
 	unsigned int urb_frames;
 	unsigned int urb_bytes;
+	unsigned int blocks;
 	unsigned int hw_rate;		/* device rate as last read or written; 0 = unknown */
 	unsigned int prepared;		/* BIT(SNDRV_PCM_STREAM_*) */
 
-	/* Taken in URB completions: substream pointers and positions */
+	/* Taken in URB completions: PCM state, substream pointers and positions */
 	spinlock_t stream_lock;
+	enum ucx_pcm_state pcm_state;
 	struct ucx_stream play;
 	struct ucx_stream capture;
-	/*
-	 * A stream URB failed: the engine is restarted from stream_err_work.
-	 * Set under stream_lock, cleared when the engine starts.
-	 */
-	bool stream_err;
 	struct work_struct stream_err_work;
 	unsigned long err_window;	/* jiffies: start of the restart count */
 	unsigned int err_restarts;	/* restarts since err_window */
@@ -105,12 +113,6 @@ struct ucx {
 	atomic_t unit_errors;
 	atomic_t stream_restarts;
 	unsigned long started;		/* jiffies when the engine last started */
-	/*
-	 * The unit's error words are counted: from the end of a start, and
-	 * not once a stop begins. Stopping the URBs makes the unit report 17
-	 * errors (measured 2026-11-17), which are no transmission errors.
-	 */
-	bool count_events;
 
 	/* System sleep: interfaces suspended, and whether one was reset */
 	unsigned int pm_count;
@@ -179,8 +181,9 @@ int ucx_vendor_read32(struct ucx *ucx, u8 request, u32 *value);
 
 int ucx_pcm_init(struct ucx *ucx);
 void ucx_stream_err_work(struct work_struct *work);
-void ucx_stream_restart_request(struct ucx *ucx, u32 word);
+void ucx_pcm_events(struct ucx *ucx, const __le32 *buf, unsigned int words);
 void ucx_pcm_suspend(struct ucx *ucx);
+void ucx_pcm_resume(struct ucx *ucx);
 void ucx_pcm_disconnect(struct ucx *ucx);
 
 int ucx_mixer_init(struct ucx *ucx);

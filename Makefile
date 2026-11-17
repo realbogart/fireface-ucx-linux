@@ -45,6 +45,13 @@ build/proto-test: tests/proto.c include/ucx_proto.h
 	@mkdir -p build
 	$(CC) $(CFLAGS) -Iinclude -o $@ $< -lm
 
+build/pcm-device-test: tests/pcm-device.c include/ucx_proto.h
+	@mkdir -p build
+	$(CC) $(CFLAGS) -Iinclude $(ALSA_CFLAGS) -o $@ $< $(ALSA_LIBS)
+
+check-pcm:
+	python3 tests/pcm.py
+
 # File format and protocol helper tests; no device needed
 check: build/ucxcfg build/proto-test build/doc-test
 	tests/config.sh build/ucxcfg
@@ -100,6 +107,12 @@ build/looptest: tools/looptest.c
 module:
 	$(MAKE) -C kmod
 
+module-pcm-test: build/pcm-device-test
+	mkdir -p build/pcm-kmod/kmod build/pcm-kmod/include
+	cp kmod/Kbuild kmod/ucx.h kmod/ucx_*.c build/pcm-kmod/kmod/
+	cp include/ucx_*.h build/pcm-kmod/include/
+	$(MAKE) -C build/pcm-kmod/kmod -f $(CURDIR)/kmod/Makefile UCX_PCM_TEST=y
+
 # As root, after `make`: install-module installs the kernel module, install
 # the tools with their udev rule, systemd user unit and WirePlumber latency rule
 install-module:
@@ -111,4 +124,4 @@ clean:
 	rm -rf build
 	$(MAKE) -C kmod clean
 
-.PHONY: all module clean ucxcfg ucxtui check fuzz install install-ucxcfg install-module
+.PHONY: all module module-pcm-test clean ucxcfg ucxtui check check-pcm fuzz install install-ucxcfg install-module

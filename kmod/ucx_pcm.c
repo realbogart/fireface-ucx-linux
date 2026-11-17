@@ -59,7 +59,7 @@ static const struct snd_pcm_hardware ucx_pcm_hw = {
 
 static unsigned int ucx_urb_blocks(void)
 {
-	return ucx_urb_blocks_used(urb_blocks);
+	return ucx_urb_blocks_used(READ_ONCE(urb_blocks));
 }
 
 static struct ucx_stream *ucx_stream(struct ucx *ucx, int dir)
@@ -85,7 +85,7 @@ static struct snd_pcm_substream *ucx_copy(struct ucx *ucx, struct ucx_stream *s,
 	u8 *ring;
 
 	spin_lock_irqsave(&ucx->stream_lock, flags);
-	substream = s->substream;
+	substream = ucx->pcm_state == UCX_PCM_RUNNING ? s->substream : NULL;
 	seq = s->seq[pair]++;
 	/* Both pairs attach at the same URB number, see struct ucx_stream */
 	if (substream && !s->armed && !s->attached[pair] && (int)(seq - s->start_seq) >= 0)
@@ -142,6 +142,7 @@ static struct snd_pcm_substream *ucx_copy(struct ucx *ucx, struct ucx_stream *s,
 	if (s->period_pos >= runtime->period_size) {
 		s->period_pos -= runtime->period_size;
 		elapsed = true;
+		atomic_inc(&s->period_inflight);
 	}
 	/* What was just copied is played after the URBs queued ahead of it */
 	if (playback)
@@ -168,7 +169,7 @@ static void ucx_tick(struct ucx *ucx)
 	unsigned long flags;
 
 	spin_lock_irqsave(&ucx->stream_lock, flags);
-	if (play->armed || cap->armed) {
+	if (ucx->pcm_state == UCX_PCM_RUNNING && (play->armed || cap->armed)) {
 		/*
 		 * Normally every endpoint has completed the same number of
 		 * URBs here. Under load one of them can be a URB behind, so
@@ -206,41 +207,72 @@ static unsigned int ucx_urb_pair(struct urb *urb)
  * no longer count the same URBs, which would shift the round trip for good.
  * So the URB is not resubmitted, and stream_err_work restarts the engine.
  */
-/* Schedule stream_err_work once per engine start; true if this call did */
-static bool ucx_stream_restart(struct ucx *ucx)
+static bool ucx_stream_fail_locked(struct ucx *ucx)
+{
+	lockdep_assert_held(&ucx->stream_lock);
+	switch (ucx->pcm_state) {
+	case UCX_PCM_RUNNING:
+		WRITE_ONCE(ucx->pcm_state, UCX_PCM_FAILED);
+		schedule_work(&ucx->stream_err_work);
+		return true;
+	case UCX_PCM_STARTING:
+		/* The caller of ucx_engine_start() will unwind this start. */
+		WRITE_ONCE(ucx->pcm_state, UCX_PCM_FAILED);
+		return true;
+	default:
+		return false;
+	}
+}
+
+static void ucx_stream_error(struct ucx *ucx, struct urb *urb, int err, const char *what)
 {
 	unsigned long flags;
 	bool first;
 
 	spin_lock_irqsave(&ucx->stream_lock, flags);
-	first = !ucx->stream_err;
-	ucx->stream_err = true;
+	first = ucx_stream_fail_locked(ucx);
 	spin_unlock_irqrestore(&ucx->stream_lock, flags);
 	if (first)
-		schedule_work(&ucx->stream_err_work);
-	return first;
-}
-
-static void ucx_stream_error(struct ucx *ucx, struct urb *urb, int err, const char *what)
-{
-	if (ucx_stream_restart(ucx))
 		dev_warn_ratelimited(&ucx->intf->dev,
-				     "%s urb on 0x%02x: %d, restarting the streams\n",
+				     "%s PCM URB on 0x%02x: %d\n",
 				     what, usb_pipeendpoint(urb->pipe) |
 				     (usb_pipein(urb->pipe) ? USB_DIR_IN : 0), err);
 }
 
 /*
- * The unit asked for a restart (UCX_EVENT_RESTART on 0x8b, from an event
- * URB completion). The Windows driver wakes its restart thread
- * (0x14000a790), which stops the pipes and starts them again with the
- * restart flag, the same as here after a failed URB.
+ * The unit sends error and restart words in both the start and stop bursts.
+ * Check the window and change state under the same lock as start and stop.
  */
-void ucx_stream_restart_request(struct ucx *ucx, u32 word)
+#define UCX_EVENT_START_MS	100
+
+void ucx_pcm_events(struct ucx *ucx, const __le32 *buf, unsigned int words)
 {
-	if (ucx_stream_restart(ucx))
+	unsigned long flags;
+	unsigned int i;
+	u32 restart = 0;
+
+	spin_lock_irqsave(&ucx->stream_lock, flags);
+	if (ucx->pcm_state != UCX_PCM_RUNNING ||
+	    time_before(jiffies, ucx->started + msecs_to_jiffies(UCX_EVENT_START_MS)))
+		goto unlock;
+	for (i = 0; i < words; i++) {
+		u32 word = le32_to_cpu(buf[i]);
+
+		if (word & UCX_EVENT_VALUE)
+			continue;
+		if (word & UCX_EVENT_RESTART) {
+			ucx_stream_fail_locked(ucx);
+			restart = word;
+			break;
+		}
+		if (word & UCX_EVENT_ERROR)
+			atomic_inc(&ucx->unit_errors);
+	}
+unlock:
+	spin_unlock_irqrestore(&ucx->stream_lock, flags);
+	if (restart)
 		dev_warn_ratelimited(&ucx->intf->dev,
-				     "unit asked for a stream restart (event %08x)\n", word);
+				     "unit asked for a stream restart (event %08x)\n", restart);
 }
 
 /* True when the URB must not be resubmitted: killed, device gone, or failed */
@@ -248,7 +280,11 @@ static bool ucx_urb_stopped(struct ucx *ucx, struct urb *urb)
 {
 	switch (urb->status) {
 	case 0:
-		return false;
+		if (urb->actual_length == urb->transfer_buffer_length)
+			return false;
+		/* The sequence number describes a whole URB of audio. */
+		ucx_stream_error(ucx, urb, -EREMOTEIO, "unexpected length for");
+		return true;
 	case -ENOENT:
 	case -ECONNRESET:
 	case -ESHUTDOWN:
@@ -270,6 +306,43 @@ static void ucx_resubmit(struct ucx *ucx, struct urb *urb)
 		ucx_stream_error(ucx, urb, err, "resubmitting");
 }
 
+static void ucx_period_elapsed(struct ucx_stream *s, struct snd_pcm_substream *substream)
+{
+	if (!substream)
+		return;
+	snd_pcm_period_elapsed(substream);
+	if (atomic_dec_and_test(&s->period_inflight))
+		wake_up(&s->period_wait);
+}
+
+#ifdef UCX_PCM_TEST
+/* One-shot faults for tests/pcm-device.c, on the primary capture endpoint. */
+static unsigned int pcm_fault;
+module_param(pcm_fault, uint, 0600);
+MODULE_PARM_DESC(pcm_fault, "Inject one PCM fault: 1=URB error, 2=short capture, 3=restart event");
+
+static void ucx_pcm_inject_fault(struct ucx *ucx, struct urb *urb)
+{
+	const __le32 restart = cpu_to_le32(UCX_EVENT_RESTART);
+
+	if (!READ_ONCE(pcm_fault) || urb->status || ucx_urb_pair(urb) ||
+	    READ_ONCE(ucx->pcm_state) != UCX_PCM_RUNNING)
+		return;
+	switch (xchg(&pcm_fault, 0)) {
+	case 1:
+		urb->status = -EPROTO;
+		break;
+	case 2:
+		urb->actual_length -= min_t(unsigned int, urb->actual_length,
+					    ucx->urb_bytes / ucx->blocks);
+		break;
+	case 3:
+		ucx_pcm_events(ucx, &restart, 1);
+		break;
+	}
+}
+#endif
+
 static void ucx_playback_complete(struct urb *urb)
 {
 	struct ucx *ucx = urb->context;
@@ -280,8 +353,7 @@ static void ucx_playback_complete(struct urb *urb)
 	elapsed = ucx_copy(ucx, &ucx->play, ucx_urb_pair(urb), urb->transfer_buffer,
 			   ucx->urb_frames, true);
 	ucx_resubmit(ucx, urb);
-	if (elapsed)
-		snd_pcm_period_elapsed(elapsed);
+	ucx_period_elapsed(&ucx->play, elapsed);
 }
 
 /*
@@ -400,17 +472,19 @@ static void ucx_capture_complete(struct urb *urb)
 	struct ucx *ucx = urb->context;
 	struct snd_pcm_substream *elapsed = NULL;
 
+#ifdef UCX_PCM_TEST
+	ucx_pcm_inject_fault(ucx, urb);
+#endif
 	if (ucx_urb_stopped(ucx, urb))
 		return;
 	if (!ucx_urb_pair(urb))
 		ucx_tick(ucx);
 	ucx_spdif_status(ucx, ucx_urb_pair(urb), urb->transfer_buffer,
-			 urb->actual_length / ucx->pair_bytes);
+				 ucx->urb_frames);
 	elapsed = ucx_copy(ucx, &ucx->capture, ucx_urb_pair(urb), urb->transfer_buffer,
-			   urb->actual_length / ucx->pair_bytes, false);
+			   ucx->urb_frames, false);
 	ucx_resubmit(ucx, urb);
-	if (elapsed)
-		snd_pcm_period_elapsed(elapsed);
+	ucx_period_elapsed(&ucx->capture, elapsed);
 }
 
 static int ucx_alloc_urbs(struct ucx *ucx, struct ucx_stream *s)
@@ -483,7 +557,7 @@ static const u8 ucx_in_eps[UCX_MAX_PAIRS] = { UCX_EP_PCM_IN, UCX_EP_PCM_IN2 };
  * 0x14000c670 (alt setting, rate), 0x14000ccb0 (REG1, START_AT, URBs) and the
  * ASIO start 0x140015df0 (CHANNELS, without which playback is ignored).
  */
-static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
+static int ucx_engine_start(struct ucx *ucx, unsigned int rate, unsigned int blocks)
 {
 	struct usb_endpoint_descriptor *out[UCX_MAX_PAIRS], *in[UCX_MAX_PAIRS];
 	unsigned int pairs = ucx_stream_pairs(rate), block = ucx_bytes_per_block(rate);
@@ -491,8 +565,6 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 	int pair, err;
 
 	lockdep_assert_held(&ucx->lock);
-	if (ucx->disconnected)
-		return -ENODEV;
 
 	/* The alt setting is the speed class; it sizes the endpoints for one block */
 	err = usb_set_interface(ucx->udev, UCX_INTF_PCM, ucx_speed_class(rate));
@@ -529,8 +601,8 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 
 	ucx->pairs = pairs;
 	ucx->pair_bytes = ucx_pair_bytes(rate);
-	ucx->urb_frames = ucx_urb_blocks() * ucx_frames_per_block(rate);
-	ucx->urb_bytes = ucx_urb_blocks() * block;
+	ucx->urb_frames = blocks * ucx_frames_per_block(rate);
+	ucx->urb_bytes = blocks * block;
 	if (!err)
 		err = ucx_vendor_write(ucx, UCX_REQ_REG1,
 				       ucx_reg1_large_buffer(rate, ucx->urb_frames),
@@ -539,12 +611,6 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 		err = ucx_vendor_write(ucx, UCX_REQ_START_AT, 0, 0);
 	if (err)
 		goto err_alt;
-
-	spin_lock_irq(&ucx->stream_lock);
-	memset(ucx->play.seq, 0, sizeof(ucx->play.seq));
-	memset(ucx->capture.seq, 0, sizeof(ucx->capture.seq));
-	ucx->stream_err = false;
-	spin_unlock_irq(&ucx->stream_lock);
 
 	for (pair = 0; pair < pairs; pair++) {
 		for (i = 0; i < UCX_URBS_PER_EP; i++) {
@@ -565,8 +631,13 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 		}
 	}
 
-	/* The unit's start burst on 0x8b follows: see ucx_count_events() */
-	WRITE_ONCE(ucx->started, jiffies);
+	/* The unit's start burst on 0x8b follows. */
+	spin_lock_irq(&ucx->stream_lock);
+	memset(ucx->play.seq, 0, sizeof(ucx->play.seq));
+	memset(ucx->capture.seq, 0, sizeof(ucx->capture.seq));
+	ucx->started = jiffies;
+	WRITE_ONCE(ucx->pcm_state, UCX_PCM_STARTING);
+	spin_unlock_irq(&ucx->stream_lock);
 
 	/* In the Windows driver's order: 0x03, 0x84, 0x01, 0x82 */
 	for (pair = pairs - 1; pair >= 0; pair--) {
@@ -587,28 +658,44 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 	if (err)
 		goto err_kill;
 
-	ucx->running = true;
-	ucx->rate = rate;
-	WRITE_ONCE(ucx->count_events, true);
-	return 0;
+	spin_lock_irq(&ucx->stream_lock);
+	if (ucx->pcm_state == UCX_PCM_FAILED) {
+		err = -EIO;
+	} else {
+		ucx->rate = rate;
+		ucx->blocks = blocks;
+		WRITE_ONCE(ucx->pcm_state, UCX_PCM_RUNNING);
+	}
+	spin_unlock_irq(&ucx->stream_lock);
+	if (!err)
+		return 0;
 
 err_kill:
+	spin_lock_irq(&ucx->stream_lock);
+	WRITE_ONCE(ucx->pcm_state, UCX_PCM_STOPPED);
+	spin_unlock_irq(&ucx->stream_lock);
 	ucx_kill_urbs(ucx);
 err_alt:
 	usb_set_interface(ucx->udev, UCX_INTF_PCM, 0);
 	return err;
 }
 
-static void ucx_engine_stop(struct ucx *ucx)
+static void ucx_engine_stop(struct ucx *ucx, bool suspend)
 {
+	enum ucx_pcm_state previous;
+
 	lockdep_assert_held(&ucx->lock);
-	if (!ucx->running)
+	spin_lock_irq(&ucx->stream_lock);
+	previous = ucx->pcm_state;
+	if (previous != UCX_PCM_SUSPENDED)
+		WRITE_ONCE(ucx->pcm_state, suspend ? UCX_PCM_SUSPENDED : UCX_PCM_STOPPED);
+	spin_unlock_irq(&ucx->stream_lock);
+	if (previous == UCX_PCM_STOPPED || previous == UCX_PCM_SUSPENDED)
 		return;
-	WRITE_ONCE(ucx->count_events, false);
+
 	ucx_kill_urbs(ucx);
-	if (!ucx->disconnected)
+	if (!suspend && !ucx->disconnected)
 		usb_set_interface(ucx->udev, UCX_INTF_PCM, 0);
-	ucx->running = false;
 }
 
 /* Restarts after stream errors allowed per UCX_STREAM_ERR_WINDOW */
@@ -616,13 +703,10 @@ static void ucx_engine_stop(struct ucx *ucx)
 #define UCX_STREAM_ERR_WINDOW	(10 * HZ)
 
 /*
- * After a stream URB failed (ucx_stream_error()): restart the engine at the
- * same rate, which also resets the endpoints (usb_set_interface()), and
- * report an xrun to the running substreams so they prepare again and start
- * from a known position. Prepared substreams that haven't started just
- * follow the new engine. If the restart fails, or the errors keep coming,
- * the engine stays stopped: trigger then refuses to start, and the next
- * prepare tries again.
+ * Drain old callbacks and detach the running streams via XRUN before
+ * submitting fresh URBs. Prepared streams can start on the replacement
+ * engine, which uses the same geometry. If it cannot restart, the next
+ * prepare can try again.
  */
 void ucx_stream_err_work(struct work_struct *work)
 {
@@ -631,36 +715,28 @@ void ucx_stream_err_work(struct work_struct *work)
 	int err = -EIO;
 
 	mutex_lock(&ucx->lock);
-	if (!ucx->running || ucx->disconnected)
+	if (READ_ONCE(ucx->pcm_state) != UCX_PCM_FAILED || ucx->disconnected)
 		goto unlock;
-	ucx_engine_stop(ucx);
+	ucx_engine_stop(ucx, false);
+
+	/*
+	 * Prepared substreams have a runtime until hw_free takes ucx->lock.
+	 * snd_pcm_stop_xrun() calls trigger, which takes only stream_lock.
+	 */
+	for (dir = 0; dir < 2; dir++)
+		if (ucx->prepared & BIT(dir))
+			snd_pcm_stop_xrun(ucx->pcm->streams[dir].substream);
+
 	if (time_after(jiffies, ucx->err_window + UCX_STREAM_ERR_WINDOW)) {
 		ucx->err_window = jiffies;
 		ucx->err_restarts = 0;
 	}
 	if (ucx->err_restarts++ < UCX_STREAM_RESTARTS) {
 		atomic_inc(&ucx->stream_restarts);
-		err = ucx_engine_start(ucx, ucx->rate);
-	}
-	/* urb_blocks may have changed since prepare: see ucx_pcm_prepare() */
-	for (dir = 0; dir < 2 && !err; dir++) {
-		if ((ucx->prepared & BIT(dir)) &&
-		    ucx->pcm->streams[dir].substream->runtime->period_size < ucx->urb_frames) {
-			ucx_engine_stop(ucx);
-			err = -EINVAL;
-		}
+		err = ucx_engine_start(ucx, ucx->rate, ucx->blocks);
 	}
 	if (err)
 		dev_err(&ucx->intf->dev, "streams stopped after errors (%d)\n", err);
-
-	/*
-	 * A substream with its bit in prepared has a runtime until hw_free,
-	 * which waits for ucx->lock. snd_pcm_stop_xrun() only acts on
-	 * running ones and calls trigger, which doesn't take ucx->lock.
-	 */
-	for (dir = 0; dir < 2; dir++)
-		if (ucx->prepared & BIT(dir))
-			snd_pcm_stop_xrun(ucx->pcm->streams[dir].substream);
 unlock:
 	mutex_unlock(&ucx->lock);
 }
@@ -750,7 +826,7 @@ static int ucx_pcm_open(struct snd_pcm_substream *substream)
 
 	/* Both directions run on the device clock: follow a running stream's rate */
 	mutex_lock(&ucx->lock);
-	if (ucx->running)
+	if (READ_ONCE(ucx->pcm_state) == UCX_PCM_RUNNING)
 		err = snd_pcm_hw_constraint_single(runtime, SNDRV_PCM_HW_PARAM_RATE, ucx->rate);
 	mutex_unlock(&ucx->lock);
 	return err < 0 ? err : 0;
@@ -768,7 +844,7 @@ static int ucx_pcm_hw_free(struct snd_pcm_substream *substream)
 	mutex_lock(&ucx->lock);
 	ucx->prepared &= ~BIT(substream->stream);
 	if (!ucx->prepared)
-		ucx_engine_stop(ucx);
+		ucx_engine_stop(ucx, false);
 	mutex_unlock(&ucx->lock);
 	return 0;
 }
@@ -778,36 +854,62 @@ static int ucx_pcm_prepare(struct snd_pcm_substream *substream)
 	struct ucx *ucx = snd_pcm_substream_chip(substream);
 	struct ucx_stream *s = ucx_stream(ucx, substream->stream);
 	unsigned int rate = substream->runtime->rate;
-	int err = 0;
+	unsigned int blocks;
+	int err;
 
 	mutex_lock(&ucx->lock);
-	if (!ucx->running)
-		err = ucx_engine_start(ucx, rate);
-	else if (ucx->rate != rate)
-		err = -EBUSY;
-	/*
-	 * ucx_copy() moves a whole URB at a time and wraps only once. The
-	 * period rule normally ensures this, but urb_blocks may have changed
-	 * since open, or the other direction started the engine.
-	 */
-	if (!err && substream->runtime->period_size < ucx->urb_frames) {
-		err = -EINVAL;
-		if (!ucx->prepared)
-			ucx_engine_stop(ucx);
+	if (ucx->disconnected) {
+		err = -ENODEV;
+		goto unlock;
 	}
-	if (!err) {
-		ucx->prepared |= BIT(substream->stream);
-		spin_lock_irq(&ucx->stream_lock);
-		memset(s->pos, 0, sizeof(s->pos));
-		memset(s->done, 0, sizeof(s->done));
-		s->reported = 0;
-		s->hwptr = 0;
-		s->period_pos = 0;
-		substream->runtime->delay = 0;
-		spin_unlock_irq(&ucx->stream_lock);
+	switch (READ_ONCE(ucx->pcm_state)) {
+	case UCX_PCM_STOPPED:
+		blocks = ucx_urb_blocks();
+		if (substream->runtime->period_size < blocks * ucx_frames_per_block(rate)) {
+			err = -EINVAL;
+			goto unlock;
+		}
+		err = ucx_engine_start(ucx, rate, blocks);
+		if (err)
+			goto unlock;
+		break;
+	case UCX_PCM_RUNNING:
+		if (ucx->rate == rate && substream->runtime->period_size >= ucx->urb_frames)
+			break;
+		err = ucx->rate == rate ? -EINVAL : -EBUSY;
+		goto unlock;
+	case UCX_PCM_SUSPENDED:
+		err = -ESTRPIPE;
+		goto unlock;
+	default:
+		/* The worker is about to recover the failed engine. */
+		err = -EPIPE;
+		goto unlock;
 	}
+
+	ucx->prepared |= BIT(substream->stream);
+	spin_lock_irq(&ucx->stream_lock);
+	memset(s->pos, 0, sizeof(s->pos));
+	memset(s->done, 0, sizeof(s->done));
+	s->reported = 0;
+	s->hwptr = 0;
+	s->period_pos = 0;
+	substream->runtime->delay = 0;
+	spin_unlock_irq(&ucx->stream_lock);
+	err = 0;
+unlock:
 	mutex_unlock(&ucx->lock);
 	return err;
+}
+
+static int ucx_pcm_sync_stop(struct snd_pcm_substream *substream)
+{
+	struct ucx *ucx = snd_pcm_substream_chip(substream);
+	struct ucx_stream *s = ucx_stream(ucx, substream->stream);
+
+	/* STOP detached this direction. Its last notification can still be in flight. */
+	wait_event(s->period_wait, !atomic_read_acquire(&s->period_inflight));
+	return 0;
 }
 
 static int ucx_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
@@ -815,33 +917,33 @@ static int ucx_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	struct ucx *ucx = snd_pcm_substream_chip(substream);
 	struct ucx_stream *s = ucx_stream(ucx, substream->stream);
 	unsigned long flags;
+	int err = 0;
 
+	spin_lock_irqsave(&ucx->stream_lock, flags);
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
-		/*
-		 * The engine stopped after errors or a system sleep since
-		 * prepare: -EPIPE makes it an xrun, and the client prepares
-		 * again, which restarts it.
-		 */
-		if (!READ_ONCE(ucx->running))
-			return -EPIPE;
-		spin_lock_irqsave(&ucx->stream_lock, flags);
+		if (ucx->pcm_state != UCX_PCM_RUNNING ||
+		    substream->runtime->rate != ucx->rate ||
+		    substream->runtime->period_size < ucx->urb_frames) {
+			err = -EPIPE;
+			break;
+		}
 		s->armed = true;
 		s->attached[0] = false;
 		s->attached[1] = false;
 		s->substream = substream;
-		spin_unlock_irqrestore(&ucx->stream_lock, flags);
-		return 0;
+		break;
 	/* No SNDRV_PCM_INFO_RESUME: after a sleep the client prepares again */
 	case SNDRV_PCM_TRIGGER_SUSPEND:
 	case SNDRV_PCM_TRIGGER_STOP:
-		spin_lock_irqsave(&ucx->stream_lock, flags);
 		s->substream = NULL;
-		spin_unlock_irqrestore(&ucx->stream_lock, flags);
-		return 0;
+		s->armed = false;
+		break;
 	default:
-		return -EINVAL;
+		err = -EINVAL;
 	}
+	spin_unlock_irqrestore(&ucx->stream_lock, flags);
+	return err;
 }
 
 static snd_pcm_uframes_t ucx_pcm_pointer(struct snd_pcm_substream *substream)
@@ -863,6 +965,7 @@ static const struct snd_pcm_ops ucx_pcm_ops = {
 	.hw_free	= ucx_pcm_hw_free,
 	.prepare	= ucx_pcm_prepare,
 	.trigger	= ucx_pcm_trigger,
+	.sync_stop	= ucx_pcm_sync_stop,
 	.pointer	= ucx_pcm_pointer,
 };
 
@@ -872,6 +975,8 @@ int ucx_pcm_init(struct ucx *ucx)
 	unsigned int i;
 	int err;
 
+	init_waitqueue_head(&ucx->play.period_wait);
+	init_waitqueue_head(&ucx->capture.period_wait);
 	err = ucx_alloc_urbs(ucx, &ucx->play);
 	if (!err)
 		err = ucx_alloc_urbs(ucx, &ucx->capture);
@@ -904,9 +1009,7 @@ int ucx_pcm_init(struct ucx *ucx)
  */
 void ucx_pcm_suspend(struct ucx *ucx)
 {
-	ucx_pm_log(ucx, "suspend: PCM substreams");
-	snd_pcm_suspend_all(ucx->pcm);
-	ucx_pm_log(ucx, "suspend: engine (running %d)", ucx->running);
+	ucx_pm_log(ucx, "suspend: PCM engine");
 	/*
 	 * Only the URBs: no usb_set_interface() back to alt 0 as
 	 * ucx_engine_stop() does. That is a control transfer, and it
@@ -918,16 +1021,23 @@ void ucx_pcm_suspend(struct ucx *ucx)
 	 * proven).
 	 */
 	mutex_lock(&ucx->lock);
-	if (ucx->running) {
-		WRITE_ONCE(ucx->count_events, false);
-		ucx_kill_urbs(ucx);
-		ucx->running = false;
-	}
+	ucx_engine_stop(ucx, true);
 	ucx->hw_rate = 0;
 	mutex_unlock(&ucx->lock);
+	ucx_pm_log(ucx, "suspend: PCM substreams");
+	snd_pcm_suspend_all(ucx->pcm);
 	ucx_pm_log(ucx, "suspend: stream error work");
 	/* Finds the engine stopped if it runs now */
 	cancel_work_sync(&ucx->stream_err_work);
+}
+
+void ucx_pcm_resume(struct ucx *ucx)
+{
+	mutex_lock(&ucx->lock);
+	spin_lock_irq(&ucx->stream_lock);
+	WRITE_ONCE(ucx->pcm_state, UCX_PCM_STOPPED);
+	spin_unlock_irq(&ucx->stream_lock);
+	mutex_unlock(&ucx->lock);
 }
 
 /* Stop streaming for good and free the URBs; open PCMs then fail with -ENODEV */
@@ -935,7 +1045,7 @@ void ucx_pcm_disconnect(struct ucx *ucx)
 {
 	mutex_lock(&ucx->lock);
 	ucx->disconnected = true;
-	ucx_engine_stop(ucx);
+	ucx_engine_stop(ucx, false);
 	mutex_unlock(&ucx->lock);
 	/* After the URBs are killed, so nothing schedules it again */
 	cancel_work_sync(&ucx->stream_err_work);

@@ -222,7 +222,11 @@ words. `tools/ucxdsp.py` wraps it.
   start until a stop begins, the driver counts bit-30 words (control
   `Stream Errors`) and restarts the streams on a bit-31 word, as Windows'
   restart thread (`0x14000a790`) does; `Stream Restarts` counts the
-  restarts. Not yet seen: a bit-30 or bit-31 word during a running stream.
+  restarts. A restart drains the old transfers and reports an XRUN to
+  applications before submitting new transfers. A failed or short PCM
+  transfer uses the same recovery path, since a missing block would throw
+  the endpoint pairs out of alignment. Not yet seen: a bit-30 or bit-31 word
+  during a running stream.
 - Requests `0x16` and `0x1b`: why Windows' clock words work for Windows.
 - Registers with no effect found: inputs `0x03`–`0x06`, outputs `0x05`/`0x06`,
   `0x3d00`, `0x3d02`–`0x3d04`, `0x3d43`–`0x3d46`, the `0x3fxx` status words.

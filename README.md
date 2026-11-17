@@ -155,6 +155,9 @@ All settings are also plain ALSA controls (`alsamixer -c UCX`,
 - `lib/`, `tools/ucxcfg.c`, `tui/`: the config library and the two tools.
   `make check` runs the tests, which need no unit, and `make fuzz` fuzzes
   the config parser.
+- `make check-pcm` tests PCM recovery and channel alignment with simulated
+  USB completions. See [Testing PCM recovery](docs/PCM-TESTING.md) for the
+  fault-injection test on a unit.
 - `tools/ucxctl.c` (`build/ucxctl`): talks to the unit over libusb, without
   the driver, to test protocol guesses safely in user space. It needs the
   driver unloaded.

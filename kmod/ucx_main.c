@@ -305,6 +305,7 @@ static void ucx_pm_resume(struct ucx *ucx, bool reset)
 	ucx_pm_log(ucx, "resume: MIDI");
 	list_for_each(p, &ucx->midi_list)
 		snd_usbmidi_resume(p);
+	ucx_pcm_resume(ucx);
 	snd_power_change_state(ucx->card, SNDRV_CTL_POWER_D0);
 	ucx->pm_suspended = false;
 	ucx_pm_log(ucx, "resume: done");
