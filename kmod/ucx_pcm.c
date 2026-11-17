@@ -21,7 +21,9 @@
 
 /*
  * Playback URBs wait in the host controller's queue until the device takes
- * them, so the queue is output latency: UCX_PLAY_URBS * urb_blocks / 6 ms.
+ * them, so the queue is output latency: UCX_PLAY_URBS * urb_blocks blocks,
+ * UCX_PLAY_URBS * urb_blocks / 6 ms at 48 kHz (a block is 1/6000 s in the
+ * 48 kHz family, longer at 44.1 and 32 kHz; see ucx.h).
  * A shorter queue means less latency but also less time for a completion to
  * refill it before the device runs dry. Capture always queues
  * UCX_URBS_PER_EP: waiting IN URBs cost no latency.
@@ -33,7 +35,7 @@
 static unsigned int urb_blocks = 2;
 module_param(urb_blocks, uint, 0644);
 MODULE_PARM_DESC(urb_blocks,
-		 "Blocks of 1/6 ms per URB: 2 (default) or 4, for 0.7 ms more latency if playback glitches under load");
+		 "Blocks of 8/16/32 frames (1/6 ms at 48 kHz) per URB: 2 (default) or 4, for 0.7 ms more latency at 48 kHz if playback glitches under load");
 
 static const struct snd_pcm_hardware ucx_pcm_hw = {
 	.info = SNDRV_PCM_INFO_MMAP | SNDRV_PCM_INFO_MMAP_VALID |

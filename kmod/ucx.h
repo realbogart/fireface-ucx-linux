@@ -14,7 +14,9 @@
  * UCX_URB_BLOCKS (most blocks per URB, the urb_blocks parameter) and
  * UCX_PLAY_URBS (playback URBs kept queued per endpoint) are in ucx_proto.h,
  * which the tools share. A block is 8/16/32 frames at single/double/quad
- * speed, so it is always the same slice of time: 1/6000 s, 0.167 ms.
+ * speed, so within a rate family it is the same slice of time at every
+ * speed: 1/6000 s (0.167 ms) at 48/96/192 kHz, 1/5512.5 s (0.181 ms) at
+ * 44.1/88.2/176.4 kHz and 1/4000 s (0.25 ms) at 32/64/128 kHz.
  */
 /* Endpoint pairs carrying audio: two at quad speed */
 #define UCX_MAX_PAIRS		2
