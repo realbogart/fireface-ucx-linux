@@ -83,10 +83,11 @@ not seen, that silences them, so start from a file in that case.
    loopback, from measurements, for that rate and `urb_blocks`; the
    program's buffer comes on top. **Errors** counts, since the unit
    appeared, the stream errors the unit reported and the driver's restarts
-   of the streams after a failed transfer: the two numbers of "Errors" in
-   RME's Windows dialog. They are transmission errors, not a program
-   missing its deadline (PipeWire counts those: `pw-top`, column ERR). The
-   line is missing with a driver older than the counters.
+   of the streams (after a failed transfer, or when the unit asked for
+   one): the two numbers of "Errors" in RME's Windows dialog. They are
+   transmission errors, not a program missing its deadline (PipeWire
+   counts those: `pw-top`, column ERR). The line is missing with a driver older than the
+   counters.
 
 Meters show the peak since the previous read, 16 times a second: inputs
 before their DSP blocks, outputs after their volume, and next to each source

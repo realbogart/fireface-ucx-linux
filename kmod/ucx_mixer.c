@@ -1411,10 +1411,12 @@ static void ucx_log_event(struct ucx *ucx, u32 w0, u32 w1)
 }
 
 /*
- * Count the stream errors the unit reports (UCX_EVENT_ERROR), as the
- * Windows driver does while a stream runs, but not the bursts every start
- * and every stop bring (struct ucx). Nothing comes here while the streams
- * run cleanly.
+ * Act on the stream events of a running stream, as the Windows driver does
+ * (0x14000c530): count the errors the unit reports (UCX_EVENT_ERROR), and
+ * restart the streams when it asks for that (UCX_EVENT_RESTART). Not the
+ * bursts every start and every stop bring (struct ucx): the start burst
+ * carries restart words too. Nothing comes here while the streams run
+ * cleanly.
  */
 static void ucx_count_events(struct ucx *ucx, const __le32 *buf, unsigned int words)
 {
@@ -1426,7 +1428,13 @@ static void ucx_count_events(struct ucx *ucx, const __le32 *buf, unsigned int wo
 		return;
 	for (i = 0; i < words; i++) {
 		w = le32_to_cpu(buf[i]);
-		if ((w & (UCX_EVENT_RESTART | UCX_EVENT_ERROR)) == UCX_EVENT_ERROR)
+		if (w & UCX_EVENT_VALUE)	/* checked first, as in Windows */
+			continue;
+		if (w & UCX_EVENT_RESTART) {
+			ucx_stream_restart_request(ucx, w);
+			return;
+		}
+		if (w & UCX_EVENT_ERROR)
 			atomic_inc(&ucx->unit_errors);
 	}
 }

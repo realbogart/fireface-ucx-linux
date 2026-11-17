@@ -98,8 +98,9 @@ struct ucx {
 	 * Stream errors since the unit appeared, the two numbers of "Errors"
 	 * in the Windows Settings dialog: errors the unit reports on 0x8b
 	 * while the streams run (UCX_EVENT_ERROR), and restarts of the streams
-	 * after a failed URB (Windows: dev+0x81e8 and dev+0x81ec). Windows
-	 * zeroes them at every stream start; these only count up.
+	 * after a failed URB or a UCX_EVENT_RESTART word (Windows: dev+0x81e8
+	 * and dev+0x81ec). Windows zeroes them at every stream start; these
+	 * only count up.
 	 */
 	atomic_t unit_errors;
 	atomic_t stream_restarts;
@@ -178,6 +179,7 @@ int ucx_vendor_read32(struct ucx *ucx, u8 request, u32 *value);
 
 int ucx_pcm_init(struct ucx *ucx);
 void ucx_stream_err_work(struct work_struct *work);
+void ucx_stream_restart_request(struct ucx *ucx, u32 word);
 void ucx_pcm_suspend(struct ucx *ucx);
 void ucx_pcm_disconnect(struct ucx *ucx);
 

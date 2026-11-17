@@ -206,7 +206,8 @@ static unsigned int ucx_urb_pair(struct urb *urb)
  * no longer count the same URBs, which would shift the round trip for good.
  * So the URB is not resubmitted, and stream_err_work restarts the engine.
  */
-static void ucx_stream_error(struct ucx *ucx, struct urb *urb, int err, const char *what)
+/* Schedule stream_err_work once per engine start; true if this call did */
+static bool ucx_stream_restart(struct ucx *ucx)
 {
 	unsigned long flags;
 	bool first;
@@ -215,12 +216,31 @@ static void ucx_stream_error(struct ucx *ucx, struct urb *urb, int err, const ch
 	first = !ucx->stream_err;
 	ucx->stream_err = true;
 	spin_unlock_irqrestore(&ucx->stream_lock, flags);
-	if (!first)
-		return;
-	dev_warn_ratelimited(&ucx->intf->dev, "%s urb on 0x%02x: %d, restarting the streams\n",
-			     what, usb_pipeendpoint(urb->pipe) |
-			     (usb_pipein(urb->pipe) ? USB_DIR_IN : 0), err);
-	schedule_work(&ucx->stream_err_work);
+	if (first)
+		schedule_work(&ucx->stream_err_work);
+	return first;
+}
+
+static void ucx_stream_error(struct ucx *ucx, struct urb *urb, int err, const char *what)
+{
+	if (ucx_stream_restart(ucx))
+		dev_warn_ratelimited(&ucx->intf->dev,
+				     "%s urb on 0x%02x: %d, restarting the streams\n",
+				     what, usb_pipeendpoint(urb->pipe) |
+				     (usb_pipein(urb->pipe) ? USB_DIR_IN : 0), err);
+}
+
+/*
+ * The unit asked for a restart (UCX_EVENT_RESTART on 0x8b, from an event
+ * URB completion). The Windows driver wakes its restart thread
+ * (0x14000a790), which stops the pipes and starts them again with the
+ * restart flag, the same as here after a failed URB.
+ */
+void ucx_stream_restart_request(struct ucx *ucx, u32 word)
+{
+	if (ucx_stream_restart(ucx))
+		dev_warn_ratelimited(&ucx->intf->dev,
+				     "unit asked for a stream restart (event %08x)\n", word);
 }
 
 /* True when the URB must not be resubmitted: killed, device gone, or failed */

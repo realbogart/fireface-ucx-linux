@@ -86,8 +86,12 @@
  * 16-bit value. The unit also sends a burst of bit-30 words, then bit-31
  * words, for about 17 ms at every stream start (measured 2026-11-15), and
  * 17 bit-30 words when the host stops the stream (measured 2026-11-17).
- * UNVERIFIED that bit-30 words come during a running stream on an error:
- * no error has been seen while streaming.
+ * Windows tests bit 29 first, then bit 31, then bit 30, and acts on bits
+ * 31 and 30 only while a stream channel is active. Its restart thread
+ * (0x14000a790) stops the pipes and starts them with the restart flag,
+ * which counts dev+0x81ec.
+ * UNVERIFIED that bit-30 or bit-31 words come during a running stream:
+ * none has been seen while streaming.
  */
 #define UCX_EVENT_RESTART	0x80000000u
 #define UCX_EVENT_ERROR		0x40000000u
