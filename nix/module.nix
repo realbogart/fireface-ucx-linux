@@ -6,7 +6,7 @@
 # PipeWire the unit's latency (wireplumber/51-fireface-ucx-latency.conf).
 { config, pkgs, ... }:
 let
-  ucxcfg = pkgs.callPackage ./ucxcfg.nix { };
+  ucxcfg = pkgs.callPackage ./ucxcfg.nix { pipewire = config.services.pipewire.package; };
 in
 {
   boot.extraModulePackages = [ (config.boot.kernelPackages.callPackage ./kmod.nix { }) ];
@@ -15,8 +15,7 @@ in
 
   services.udev.packages = [ ucxcfg ];
 
-  # wireplumber/51-fireface-ucx-latency.conf: the unit's latency, for PipeWire
-  # to report to clients (installed by the package under share/wireplumber)
+  # Install the single-speed latency correction and the 96 kHz duplex profile.
   services.pipewire.wireplumber.configPackages = [ ucxcfg ];
 
   # Same as systemd/ucxcfg-apply.service.in, which explains it

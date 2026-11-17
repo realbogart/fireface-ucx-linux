@@ -57,7 +57,7 @@ below), the newer UCX II, and other Fireface models.
 
 Add the flake as an input and import its module, which builds the driver
 for your kernel and installs the tools, the udev rule, the user service and
-the WirePlumber latency rule:
+the WirePlumber profile and latency rules:
 
 ```nix
 # flake.nix
@@ -73,7 +73,7 @@ imports = [ inputs.fireface-ucx.nixosModules.default ];
 make                          # driver and tools
 sudo make install-module      # the driver, into /lib/modules/$(uname -r)/updates
 sudo make install PREFIX=/usr # ucxcfg, ucxtui, udev rule, systemd user unit,
-                              # WirePlumber latency rule
+                              # PipeWire card profile and WirePlumber rules
 ```
 
 The driver loads by itself when the unit is plugged in. Rebuild and
@@ -85,18 +85,39 @@ use `sudo insmod kmod/snd-fireface-ucx.ko`.
 The unit appears as the ALSA card `UCX`. Any ALSA, JACK or PipeWire
 application can use it.
 
-With **PipeWire**, choose the **Pro Audio** profile for the card. It gives
-all 18 channels, and its latency is constant (the default profile's drifts).
-It runs the unit at 32, 44.1 or 48 kHz; the higher rates have fewer channels,
-which the profile doesn't follow.
+With **PipeWire and WirePlumber**, choose the UCX card profile in your sound
+settings according to the session rate.
 
-PipeWire reports only its own buffering, not the 105 frames the unit and the
-driver add to a round trip. The installed WirePlumber rule
+| Card profile | Hardware rate | Playback and capture |
+|---|---|---|
+| **Pro Audio** | 32, 44.1 or 48 kHz | 18 channels each, including ADAT 1–8 |
+| **Fireface UCX 96 kHz (14 channels)** | 96 kHz | 14 channels each, including ADAT 1–4 |
+
+The 96 kHz profile sets the graph rate while the UCX is active. Switching
+profiles recreates its playback and capture ports. Applications or patchbays
+that target a node by name should use the `.ucx-96k` sink and source for
+that session. Select **Pro Audio** again to return to the 18-channel
+layout (48 kHz with the default graph settings).
+
+To switch from the terminal, find the UCX card under **Devices** in
+`wpctl status` and substitute its number for `ID`. After first installing
+the profile, run `systemctl --user restart wireplumber` to load the rules.
+
+```sh
+pw-cli set-param ID Profile '{ name: "ucx-96k" }'    # 96 kHz session
+pw-cli set-param ID Profile '{ name: "pro-audio" }'  # return to single speed
+```
+
+While playing and recording, check the hardware rate and channel count
+with `cat /proc/asound/UCX/pcm0{p,c}/sub0/hw_params`.
+
+In **Pro Audio**, the unit and driver add 105 frames to the round trip at
+single speed. The installed WirePlumber rule
 ([`wireplumber/51-fireface-ucx-latency.conf`](wireplumber/51-fireface-ucx-latency.conf))
 adds them, so a DAW that compensates for reported latency lines up a
 recording with what it played; don't also set a manual recording offset in
 the DAW. The values are for the driver's default `urb_blocks=2`; the file
-says what to change for 4.
+says what to change for 4. The 96 kHz profile has no calibrated latency offset.
 
 **`ucxtui`** is the mixer: inputs, outputs, routing, effects and settings,
 with meters. Changes are sent when you apply them, or as you make them in

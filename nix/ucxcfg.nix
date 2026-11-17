@@ -7,6 +7,7 @@
   pkg-config,
   alsa-lib,
   jansson,
+  pipewire,
 }:
 
 stdenv.mkDerivation {
@@ -45,7 +46,10 @@ stdenv.mkDerivation {
   doCheck = true;
   checkTarget = "check";
   installTargets = [ "install-ucxcfg" ];
-  installFlags = [ "PREFIX=${placeholder "out"}" ];
+  installFlags = [
+    "PREFIX=${placeholder "out"}"
+    "ACP_PROFILES_DIR=${pipewire}/share/alsa-card-profile/mixer/profile-sets"
+  ];
 
   meta = {
     description = "Apply a declarative JSON configuration to an RME Fireface UCX (snd-fireface-ucx), from a file or a terminal editor";

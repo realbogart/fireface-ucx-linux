@@ -1,0 +1,27 @@
+monitor.alsa.rules = [
+  {
+    # Both USB vendor IDs used by the first-generation UCX in native mode.
+    matches = [
+      { device.vendor.id = "0x2a39" device.product.id = "0x3fc9" }
+      { device.vendor.id = "0x0424" device.product.id = "0x3fc9" }
+    ]
+    actions = {
+      update-props = {
+        device.profile-set = "@PROFILE_SET@"
+      }
+    }
+  }
+  {
+    matches = [
+      { alsa.driver_name = "snd_fireface_ucx" device.profile.name = "ucx-96k" }
+    ]
+    actions = {
+      update-props = {
+        audio.rate = 96000
+        node.force-rate = 96000
+        api.alsa.disable-tsched = true
+        api.alsa.auto-link = true
+      }
+    }
+  }
+]

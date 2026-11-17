@@ -1,5 +1,7 @@
 CFLAGS ?= -O2 -g -Wall -Wextra
 PREFIX ?= /usr/local
+ACP_PROFILES_DIR ?= /usr/share/alsa-card-profile/mixer/profile-sets
+UCX_PROFILE_SET = $(PREFIX)/share/alsa-card-profile/mixer/profile-sets/fireface-ucx.conf
 # For the user unit's ExecStartPre (systemd wants an absolute path)
 SLEEP ?= $(shell command -v sleep)
 # Evaluated only by the targets that use them, so `make ucxcfg` needs no libusb
@@ -96,6 +98,11 @@ install-ucxcfg: build/ucxcfg build/ucxtui
 		$(DESTDIR)$(PREFIX)/lib/udev/rules.d/70-snd-fireface-ucx.rules
 	install -Dm644 wireplumber/51-fireface-ucx-latency.conf \
 		$(DESTDIR)$(PREFIX)/share/wireplumber/wireplumber.conf.d/51-fireface-ucx-latency.conf
+	install -d $(dir $(DESTDIR)$(UCX_PROFILE_SET))
+	sed 's|@ACP_PROFILES_DIR@|$(ACP_PROFILES_DIR)|g' wireplumber/fireface-ucx.conf.in \
+		>$(DESTDIR)$(UCX_PROFILE_SET)
+	sed 's|@PROFILE_SET@|$(UCX_PROFILE_SET)|g' wireplumber/52-fireface-ucx-96k.conf.in \
+		>$(DESTDIR)$(PREFIX)/share/wireplumber/wireplumber.conf.d/52-fireface-ucx-96k.conf
 	@mkdir -p $(DESTDIR)$(PREFIX)/lib/systemd/user
 	sed -e 's|@BINDIR@|$(PREFIX)/bin|' -e 's|@SLEEP@|$(SLEEP)|' systemd/ucxcfg-apply.service.in \
 		>$(DESTDIR)$(PREFIX)/lib/systemd/user/ucxcfg-apply.service

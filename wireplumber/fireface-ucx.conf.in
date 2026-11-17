@@ -1,0 +1,17 @@
+# Keep the distribution's regular mappings. ACP also supplies Pro Audio.
+.include @ACP_PROFILES_DIR@/default.conf
+
+[Mapping ucx-96k]
+description = 96 kHz
+device-strings = hw:%f,0
+channel-map = aux0,aux1,aux2,aux3,aux4,aux5,aux6,aux7,aux8,aux9,aux10,aux11,aux12,aux13
+exact-channels = yes
+priority = 0
+
+[Profile ucx-96k]
+description = Fireface UCX 96 kHz (14 channels)
+output-mappings = ucx-96k
+input-mappings = ucx-96k
+# ACP normally probes at 48 kHz, where the UCX requires 18 channels.
+skip-probe = yes
+priority = 0
