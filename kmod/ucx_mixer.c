@@ -1412,15 +1412,16 @@ static void ucx_log_event(struct ucx *ucx, u32 w0, u32 w1)
 
 /*
  * Count the stream errors the unit reports (UCX_EVENT_ERROR), as the
- * Windows driver does while a stream runs, but not the burst every start
- * brings. Nothing comes here while the streams run cleanly.
+ * Windows driver does while a stream runs, but not the bursts every start
+ * and every stop bring (struct ucx). Nothing comes here while the streams
+ * run cleanly.
  */
 static void ucx_count_events(struct ucx *ucx, const __le32 *buf, unsigned int words)
 {
 	unsigned int i;
 	u32 w;
 
-	if (!READ_ONCE(ucx->running) ||
+	if (!READ_ONCE(ucx->count_events) ||
 	    time_before(jiffies, READ_ONCE(ucx->started) + msecs_to_jiffies(UCX_EVENT_START_MS)))
 		return;
 	for (i = 0; i < words; i++) {

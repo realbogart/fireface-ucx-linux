@@ -102,6 +102,12 @@ struct ucx {
 	atomic_t unit_errors;
 	atomic_t stream_restarts;
 	unsigned long started;		/* jiffies when the engine last started */
+	/*
+	 * The unit's error words are counted: from the end of a start, and
+	 * not once a stop begins. Stopping the URBs makes the unit report 17
+	 * errors (measured 2026-11-17), which are no transmission errors.
+	 */
+	bool count_events;
 
 	/* System sleep: interfaces suspended, and whether one was reset */
 	unsigned int pm_count;

@@ -567,6 +567,7 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate)
 
 	ucx->running = true;
 	ucx->rate = rate;
+	WRITE_ONCE(ucx->count_events, true);
 	return 0;
 
 err_kill:
@@ -581,6 +582,7 @@ static void ucx_engine_stop(struct ucx *ucx)
 	lockdep_assert_held(&ucx->lock);
 	if (!ucx->running)
 		return;
+	WRITE_ONCE(ucx->count_events, false);
 	ucx_kill_urbs(ucx);
 	if (!ucx->disconnected)
 		usb_set_interface(ucx->udev, UCX_INTF_PCM, 0);
@@ -895,6 +897,7 @@ void ucx_pcm_suspend(struct ucx *ucx)
 	 */
 	mutex_lock(&ucx->lock);
 	if (ucx->running) {
+		WRITE_ONCE(ucx->count_events, false);
 		ucx_kill_urbs(ucx);
 		ucx->running = false;
 	}
