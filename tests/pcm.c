@@ -6,8 +6,13 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include "ucx_proto.h"
+
+#ifdef NDEBUG
+#error "PCM tests and benchmarks require assertions"
+#endif
 
 typedef uint8_t u8;
 typedef uint32_t u32;
@@ -85,6 +90,11 @@ struct ucx {
 	unsigned long started, err_window;
 	unsigned int err_restarts, unit_errors, stream_restarts;
 	struct snd_pcm *pcm;
+	int cs_lock;
+	u8 cs[UCX_SPDIF_CS_BITS / 8], cs_work[UCX_SPDIF_CS_BITS / 8];
+	unsigned long cs_jiffies;
+	unsigned int cs_pos;
+	bool cs_synced; /* used by the benchmark baseline */
 };
 
 static unsigned long jiffies = 30000;
@@ -101,12 +111,6 @@ static bool usb_pipein(unsigned int pipe) { return pipe & 0x80; }
 static int usb_submit_urb(struct urb *urb, int flags) { (void)urb; (void)flags; return ++resubmits, 0; }
 static void snd_pcm_period_elapsed(struct snd_pcm_substream *s) { assert(s->runtime); notifications++; }
 static struct ucx *snd_pcm_substream_chip(struct snd_pcm_substream *s) { return s->chip; }
-
-static void ucx_spdif_status(struct ucx *ucx, unsigned int pair, const u8 *buf,
-			     unsigned int frames)
-{
-	assert(pair < ucx->pairs && buf && frames == ucx->urb_frames);
-}
 
 static void ucx_kill_urbs(struct ucx *ucx)
 {
@@ -144,7 +148,7 @@ static void finish_notification(void)
 	ucx->capture.substream->runtime->period_size = 2 * ucx->urb_frames;
 	u8 capture[UCX_URB_BLOCKS * 0x380] = {0};
 	assert(!ucx_copy(ucx, &ucx->capture, 0, capture, ucx->urb_frames, false));
-	assert(ucx->capture.hwptr == ucx->urb_frames);
+	assert(ucx->capture.hwptr == 2 * ucx->urb_frames);
 	ucx_period_elapsed(&ucx->play, pending_notification);
 	pending_notification = NULL;
 }
@@ -178,7 +182,7 @@ struct fixture {
 	struct snd_pcm pcm;
 	struct snd_pcm_runtime runtime[2];
 	struct snd_pcm_substream sub[2];
-	u8 ring[2][128 * 72];
+	u8 ring[2][(2 * UCX_URB_BLOCKS * 32 + 3) * 72];
 };
 
 static void begin(struct fixture *f, unsigned int rate)
@@ -192,6 +196,7 @@ static void begin(struct fixture *f, unsigned int rate)
 	ucx->blocks = 2;
 	ucx->pairs = ucx_stream_pairs(rate);
 	ucx->pair_bytes = ucx_pair_bytes(rate);
+	ucx->cs_pos = UCX_SPDIF_CS_BITS + 1;
 	ucx->urb_frames = ucx->blocks * ucx_frames_per_block(rate);
 	ucx->urb_bytes = ucx->blocks * ucx_bytes_per_block(rate);
 	ucx->pcm_state = UCX_PCM_RUNNING;
@@ -202,7 +207,6 @@ static void begin(struct fixture *f, unsigned int rate)
 		f->pcm.streams[i].substream = &f->sub[i];
 		assert(!ucx_pcm_trigger(&f->sub[i], SNDRV_PCM_TRIGGER_START));
 	}
-	ucx_tick(ucx);
 }
 
 static void test_recovery(unsigned int rate, unsigned int fault)
@@ -265,23 +269,176 @@ static void test_sync_stop(void)
 	u8 packet[UCX_URB_BLOCKS * 0x380];
 
 	begin(&f, 48000);
+	memset(packet, 0, ucx->urb_bytes);
+	struct urb in = {ucx, UCX_EP_PCM_IN, ucx->urb_bytes, ucx->urb_bytes, 0, packet};
+	ucx_capture_complete(&in);
 	pending_notification = ucx_copy(ucx, &ucx->play, 0, packet, ucx->urb_frames, true);
 	assert(pending_notification == &f.sub[0] && ucx->play.period_inflight == 1);
 	assert(!ucx_pcm_trigger(&f.sub[0], SNDRV_PCM_TRIGGER_STOP));
 	assert(!ucx_copy(ucx, &ucx->play, 0, packet, ucx->urb_frames, true));
 	assert(!ucx_pcm_sync_stop(&f.sub[0]));
-	assert(!pending_notification && !ucx->play.period_inflight && notifications == 1);
+	assert(!pending_notification && !ucx->play.period_inflight && notifications == 2);
 	assert(ucx->pcm_state == UCX_PCM_RUNNING && !kills);
 }
 
-int main(void)
+static void test_ring_wrap(unsigned int rate, unsigned int blocks)
 {
+	struct fixture f;
+	struct ucx *ucx = &f.ucx;
+	u8 packet[UCX_URB_BLOCKS * 0x380];
+	u8 expected[sizeof(f.ring[1])] = {0};
+
+	begin(&f, rate);
+	unsigned int frames = blocks * ucx_frames_per_block(rate);
+	unsigned int size = 2 * frames + 3; /* third transfer wraps mid-URB */
+	ucx->blocks = blocks;
+	ucx->urb_frames = frames;
+	ucx->urb_bytes = frames * ucx->pair_bytes;
+	for (int dir = 0; dir < 2; dir++) {
+		f.runtime[dir].buffer_size = size;
+		f.runtime[dir].period_size = frames;
+	}
+	for (unsigned int i = 0; i < sizeof(f.ring[0]); i++)
+		f.ring[0][i] = i ^ (i >> 8);
+	for (unsigned int n = 0; n < 3; n++) {
+		for (unsigned int pair = 0; pair < ucx->pairs; pair++) {
+			struct urb urb = {ucx, pair ? UCX_EP_PCM_IN2 : UCX_EP_PCM_IN,
+					  ucx->urb_bytes, ucx->urb_bytes, 0, packet};
+			for (unsigned int i = 0; i < ucx->urb_bytes; i++)
+				packet[i] = i + 31 * pair + 7 * n;
+			for (unsigned int i = 0; i < frames; i++) {
+				unsigned int pos = (n * frames + i) % size;
+				unsigned int at = (pos * ucx->pairs + pair) * ucx->pair_bytes;
+				memcpy(expected + at, packet + i * ucx->pair_bytes, ucx->pair_bytes);
+			}
+			ucx_capture_complete(&urb);
+			assert(!memcmp(f.ring[1], expected, sizeof(expected)));
+			urb.pipe = pair ? UCX_EP_PCM_OUT2 : UCX_EP_PCM_OUT;
+			ucx_playback_complete(&urb);
+			for (unsigned int i = 0; i < frames; i++) {
+				unsigned int pos = (n * frames + i) % size;
+				unsigned int at = (pos * ucx->pairs + pair) * ucx->pair_bytes;
+				assert(!memcmp(packet + i * ucx->pair_bytes,
+					       f.ring[0] + at, ucx->pair_bytes));
+			}
+		}
+		assert(ucx->capture.hwptr == (n + 1) * frames % size);
+		assert(ucx->play.hwptr == ucx->capture.hwptr);
+		assert(notifications == 2 * (n + 1));
+	}
+}
+
+static void test_spdif(unsigned int rate)
+{
+	struct fixture f;
+	struct ucx *ucx = &f.ucx;
+	enum { first_marker = UCX_SPDIF_CS_BITS, valid_start = first_marker + 231, publish = valid_start + UCX_SPDIF_CS_BITS };
+	u8 expected[UCX_SPDIF_CS_BITS / 8];
+	u8 packet[UCX_URB_BLOCKS * 0x380];
+
+	begin(&f, rate);
+	for (unsigned int i = 0; i < sizeof(expected); i++)
+		expected[i] = 0xeb ^ (11 * i);
+	unsigned int offset = UCX_SPDIF_IN_CHANNEL * UCX_SAMPLE_BYTES;
+	for (unsigned int base = 0; base <= publish; base += ucx->urb_frames) {
+		for (unsigned int pair = 0; pair < ucx->pairs; pair++) {
+			memset(packet, 0xff, ucx->urb_bytes);
+			if (pair == offset / ucx->pair_bytes) {
+				for (unsigned int i = 0; i < ucx->urb_frames; i++) {
+					unsigned int pos = base + i;
+					u8 status = 0;
+					/* An early marker, then a late one, before a valid block. */
+					if (pos == first_marker || pos == first_marker + 17 ||
+					    pos == valid_start || pos == publish)
+						status = UCX_SPDIF_CS_BLOCK;
+					if (pos >= valid_start && pos < publish) {
+						unsigned int bit = (pos - valid_start + UCX_SPDIF_CS_SHIFT)
+								   % UCX_SPDIF_CS_BITS;
+						if (expected[bit / 8] & BIT(bit % 8))
+							status |= UCX_SPDIF_CS;
+					}
+					packet[i * ucx->pair_bytes + offset % ucx->pair_bytes] = status;
+				}
+			}
+			ucx_spdif_status(ucx, pair, packet, ucx->urb_frames);
+		}
+		if (base + ucx->urb_frames <= publish)
+			assert(!ucx->cs_jiffies);
+	}
+	assert(ucx->cs_jiffies && !memcmp(ucx->cs, expected, sizeof(expected)));
+}
+
+static uint64_t nanoseconds(void)
+{
+	struct timespec now;
+
+	clock_gettime(CLOCK_MONOTONIC, &now);
+	return (uint64_t)now.tv_sec * 1000000000 + now.tv_nsec;
+}
+
+/* A slice covers one transfer on each active playback and capture endpoint. */
+static void bench_duplex(unsigned int rate)
+{
+	enum { slices = 360000 };
+	struct fixture f;
+	struct ucx *ucx = &f.ucx;
+	u8 input[UCX_MAX_PAIRS][UCX_SPDIF_CS_BITS * 72] = {0};
+	u8 output[UCX_MAX_PAIRS][UCX_URB_BLOCKS * 0x380];
+	struct urb in[UCX_MAX_PAIRS], out[UCX_MAX_PAIRS];
+	unsigned int offset = UCX_SPDIF_IN_CHANNEL * UCX_SAMPLE_BYTES;
+	unsigned int frame = 0;
+	uint64_t start, elapsed;
+
+	begin(&f, rate);
+	/* Two-block URBs divide a 192-frame status cycle at every rate. */
+	for (unsigned int i = 0; i < UCX_SPDIF_CS_BITS; i++)
+		input[offset / ucx->pair_bytes][i * ucx->pair_bytes + offset % ucx->pair_bytes] =
+			(i == 0 ? UCX_SPDIF_CS_BLOCK : 0) | (i % 17 == 0 ? UCX_SPDIF_CS : 0);
+	for (unsigned int pair = 0; pair < ucx->pairs; pair++) {
+		in[pair] = (struct urb){ucx, pair ? UCX_EP_PCM_IN2 : UCX_EP_PCM_IN,
+					ucx->urb_bytes, ucx->urb_bytes, 0, NULL};
+		out[pair] = (struct urb){ucx, pair ? UCX_EP_PCM_OUT2 : UCX_EP_PCM_OUT,
+					 ucx->urb_bytes, ucx->urb_bytes, 0, output[pair]};
+	}
+	memset(f.ring[0], 0x55, sizeof(f.ring[0]));
+	start = nanoseconds();
+	for (unsigned int i = 0; i < slices; i++) {
+		for (unsigned int pair = 0; pair < ucx->pairs; pair++) {
+			in[pair].transfer_buffer = &input[pair][frame * ucx->pair_bytes];
+			ucx_capture_complete(&in[pair]);
+			ucx_playback_complete(&out[pair]);
+		}
+		/* Model the host controller and ALSA client observing buffer writes. */
+		__asm__ volatile("" ::: "memory");
+		frame += ucx->urb_frames;
+		if (frame == UCX_SPDIF_CS_BITS)
+			frame = 0;
+	}
+	elapsed = nanoseconds() - start;
+	assert(ucx->cs_jiffies && notifications == 2 * slices);
+	printf("%u %llu\n", rate, (unsigned long long)(elapsed * 1000 / slices));
+}
+
+int main(int argc, char **argv)
+{
+	if (argc == 2 && !strcmp(argv[1], "--bench")) {
+		bench_duplex(48000);
+		bench_duplex(96000);
+		bench_duplex(192000);
+		return 0;
+	}
 	for (unsigned int fault = 1; fault <= 3; fault++) {
 		test_recovery(48000, fault);
 		test_recovery(192000, fault);
 	}
+	const unsigned int rates[] = {48000, 96000, 192000};
+	for (unsigned int i = 0; i < sizeof(rates) / sizeof(rates[0]); i++) {
+		test_ring_wrap(rates[i], 2);
+		test_ring_wrap(rates[i], 4);
+		test_spdif(rates[i]);
+	}
 	fail_start = true;
 	test_recovery(48000, 1);
 	test_sync_stop();
-	puts("PCM tests passed (duplex faults, frame alignment, failed restart, per-direction stop)");
+	puts("PCM tests passed (duplex faults, frame alignment, ring wrap, S/PDIF status, failed restart, per-direction stop)");
 }

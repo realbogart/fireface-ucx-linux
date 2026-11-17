@@ -68,91 +68,6 @@ static struct ucx_stream *ucx_stream(struct ucx *ucx, int dir)
 }
 
 /*
- * Move @frames of one endpoint pair between @buf and the ALSA ring buffer of
- * @s. Returns the substream when a period boundary was crossed, for
- * snd_pcm_period_elapsed().
- */
-static struct snd_pcm_substream *ucx_copy(struct ucx *ucx, struct ucx_stream *s,
-					  unsigned int pair, u8 *buf, unsigned int frames,
-					  bool playback)
-{
-	struct snd_pcm_substream *substream;
-	struct snd_pcm_runtime *runtime;
-	unsigned int pair_bytes = ucx->pair_bytes, frame_bytes = ucx->pairs * pair_bytes;
-	unsigned int first, rest, pos, done, seq, i;
-	unsigned long flags;
-	bool elapsed = false;
-	u8 *ring;
-
-	spin_lock_irqsave(&ucx->stream_lock, flags);
-	substream = ucx->pcm_state == UCX_PCM_RUNNING ? s->substream : NULL;
-	seq = s->seq[pair]++;
-	/* Both pairs attach at the same URB number, see struct ucx_stream */
-	if (substream && !s->armed && !s->attached[pair] && (int)(seq - s->start_seq) >= 0)
-		s->attached[pair] = true;
-	if (!substream || !s->attached[pair]) {
-		if (playback)
-			memset(buf, 0, frames * pair_bytes);
-		spin_unlock_irqrestore(&ucx->stream_lock, flags);
-		return NULL;
-	}
-
-	runtime = substream->runtime;
-	pos = s->pos[pair];
-	if (ucx->pairs == 1) {
-		ring = runtime->dma_area + pos * frame_bytes;
-		first = min_t(unsigned int, frames, runtime->buffer_size - pos);
-		rest = frames - first;
-		if (playback) {
-			memcpy(buf, ring, first * frame_bytes);
-			memcpy(buf + first * frame_bytes, runtime->dma_area, rest * frame_bytes);
-		} else {
-			memcpy(ring, buf, first * frame_bytes);
-			memcpy(runtime->dma_area, buf + first * frame_bytes, rest * frame_bytes);
-		}
-		pos += frames;
-		if (pos >= runtime->buffer_size)
-			pos -= runtime->buffer_size;
-	} else {
-		/* This pair's channels are one slice of every frame in the ring */
-		ring = runtime->dma_area + pair * pair_bytes;
-		for (i = 0; i < frames; i++) {
-			if (playback)
-				memcpy(buf, ring + pos * frame_bytes, pair_bytes);
-			else
-				memcpy(ring + pos * frame_bytes, buf, pair_bytes);
-			buf += pair_bytes;
-			if (++pos == runtime->buffer_size)
-				pos = 0;
-		}
-	}
-	s->pos[pair] = pos;
-	s->done[pair] += frames;
-
-	/* A frame is done when the pair that is behind has done it */
-	done = s->done[0];
-	if (ucx->pairs == 2 && (int)(s->done[1] - done) < 0)
-		done = s->done[1];
-	frames = done - s->reported;
-	s->reported = done;
-	s->hwptr += frames;
-	if (s->hwptr >= runtime->buffer_size)
-		s->hwptr -= runtime->buffer_size;
-	s->period_pos += frames;
-	if (s->period_pos >= runtime->period_size) {
-		s->period_pos -= runtime->period_size;
-		elapsed = true;
-		atomic_inc(&s->period_inflight);
-	}
-	/* What was just copied is played after the URBs queued ahead of it */
-	if (playback)
-		runtime->delay = UCX_PLAY_URBS * ucx->urb_frames;
-	spin_unlock_irqrestore(&ucx->stream_lock, flags);
-
-	return elapsed ? substream : NULL;
-}
-
-/*
  * Attach the streams that trigger armed. This runs in the completion of
  * capture endpoint 0x82, the device's clock, before that URB is counted: it
  * is the one point where the URB numbers of both directions have a fixed
@@ -166,9 +81,8 @@ static void ucx_tick(struct ucx *ucx)
 {
 	struct ucx_stream *play = &ucx->play, *cap = &ucx->capture;
 	unsigned int seq;
-	unsigned long flags;
 
-	spin_lock_irqsave(&ucx->stream_lock, flags);
+	lockdep_assert_held(&ucx->stream_lock);
 	if (ucx->pcm_state == UCX_PCM_RUNNING && (play->armed || cap->armed)) {
 		/*
 		 * Normally every endpoint has completed the same number of
@@ -193,7 +107,99 @@ static void ucx_tick(struct ucx *ucx)
 			play->armed = false;
 		}
 	}
+}
+
+/*
+ * Copy up to the end of the ring. Quad speed interleaves two six-channel
+ * endpoints in ALSA. A fixed copy size lets the compiler inline each slice.
+ */
+static void ucx_copy_span(u8 *ring, u8 *buf, unsigned int frames, unsigned int frame_bytes,
+			  bool split, bool playback)
+{
+	const unsigned int slice = 6 * UCX_SAMPLE_BYTES;
+	size_t i;
+
+	if (!split) {
+		if (playback)
+			memcpy(buf, ring, frames * frame_bytes);
+		else
+			memcpy(ring, buf, frames * frame_bytes);
+	} else if (playback) {
+		for (i = 0; i < frames; i++)
+			memcpy(buf + i * slice, ring + i * (2 * slice), slice);
+	} else {
+		for (i = 0; i < frames; i++)
+			memcpy(ring + i * (2 * slice), buf + i * slice, slice);
+	}
+}
+
+/*
+ * Move @frames of one endpoint pair between @buf and the ALSA ring buffer of
+ * @s. Returns the substream when a period boundary was crossed, for
+ * snd_pcm_period_elapsed().
+ */
+static struct snd_pcm_substream *ucx_copy(struct ucx *ucx, struct ucx_stream *s,
+					  unsigned int pair, u8 *buf, unsigned int frames,
+					  bool playback)
+{
+	struct snd_pcm_substream *substream;
+	struct snd_pcm_runtime *runtime;
+	unsigned int pair_bytes = ucx->pair_bytes, frame_bytes = ucx->pairs * pair_bytes;
+	unsigned int first, pos, done, seq;
+	unsigned long flags;
+	bool elapsed = false;
+	u8 *ring;
+
+	spin_lock_irqsave(&ucx->stream_lock, flags);
+	if (!playback && !pair)
+		ucx_tick(ucx);
+	substream = ucx->pcm_state == UCX_PCM_RUNNING ? s->substream : NULL;
+	seq = s->seq[pair]++;
+	/* Both pairs attach at the same URB number, see struct ucx_stream */
+	if (substream && !s->armed && !s->attached[pair] && (int)(seq - s->start_seq) >= 0)
+		s->attached[pair] = true;
+	if (!substream || !s->attached[pair]) {
+		if (playback)
+			memset(buf, 0, frames * pair_bytes);
+		spin_unlock_irqrestore(&ucx->stream_lock, flags);
+		return NULL;
+	}
+
+	runtime = substream->runtime;
+	pos = s->pos[pair];
+	ring = runtime->dma_area + pair * pair_bytes;
+	first = min_t(unsigned int, frames, runtime->buffer_size - pos);
+	ucx_copy_span(ring + pos * frame_bytes, buf, first, frame_bytes, ucx->pairs == 2, playback);
+	if (first < frames)
+		ucx_copy_span(ring, buf + first * pair_bytes, frames - first, frame_bytes,
+			      ucx->pairs == 2, playback);
+	pos += frames;
+	if (pos >= runtime->buffer_size)
+		pos -= runtime->buffer_size;
+	s->pos[pair] = pos;
+	s->done[pair] += frames;
+
+	/* A frame is done when the pair that is behind has done it */
+	done = s->done[0];
+	if (ucx->pairs == 2 && (int)(s->done[1] - done) < 0)
+		done = s->done[1];
+	frames = done - s->reported;
+	s->reported = done;
+	s->hwptr += frames;
+	if (s->hwptr >= runtime->buffer_size)
+		s->hwptr -= runtime->buffer_size;
+	s->period_pos += frames;
+	if (s->period_pos >= runtime->period_size) {
+		s->period_pos -= runtime->period_size;
+		elapsed = true;
+		atomic_inc(&s->period_inflight);
+	}
+	/* What was just copied is played after the URBs queued ahead of it */
+	if (playback)
+		runtime->delay = UCX_PLAY_URBS * ucx->urb_frames;
 	spin_unlock_irqrestore(&ucx->stream_lock, flags);
+
+	return elapsed ? substream : NULL;
 }
 
 /* Pair 1 is endpoints 0x03 and 0x84 */
@@ -364,34 +370,36 @@ static void ucx_playback_complete(struct urb *urb)
 static void ucx_spdif_status(struct ucx *ucx, unsigned int pair, const u8 *buf,
 			     unsigned int frames)
 {
-	unsigned int at = UCX_SPDIF_IN_CHANNEL * 4, i, bit;
+	unsigned int stride = ucx->pair_bytes;
+	unsigned int at = UCX_SPDIF_IN_CHANNEL * UCX_SAMPLE_BYTES;
+	unsigned int pos, i, bit;
 	unsigned long flags;
 
-	if (at / ucx->pair_bytes != pair)
+	if (pair != ucx->pairs - 1)
 		return;
-	buf += at % ucx->pair_bytes;
-	for (i = 0; i < frames; i++, buf += ucx->pair_bytes) {
-		if (*buf & UCX_SPDIF_CS_BLOCK) {
-			if (ucx->cs_synced && ucx->cs_pos == UCX_SPDIF_CS_BITS) {
+	/* At quad speed channels 6..11 arrive on pair 1. */
+	buf += at - pair * stride;
+	/* A position past the end ignores data until a new marker. */
+	pos = ucx->cs_pos;
+	for (i = 0; i < frames; i++, pos++) {
+		u8 status = buf[i * stride];
+
+		if (status & UCX_SPDIF_CS_BLOCK) {
+			if (pos == UCX_SPDIF_CS_BITS) {
 				spin_lock_irqsave(&ucx->cs_lock, flags);
 				memcpy(ucx->cs, ucx->cs_work, sizeof(ucx->cs));
 				ucx->cs_jiffies = jiffies | 1;
 				spin_unlock_irqrestore(&ucx->cs_lock, flags);
 			}
 			memset(ucx->cs_work, 0, sizeof(ucx->cs_work));
-			ucx->cs_synced = true;
-			ucx->cs_pos = 0;
-		} else if (ucx->cs_pos >= UCX_SPDIF_CS_BITS) {
-			ucx->cs_synced = false;	/* no marker where one was due */
+			pos = 0;
 		}
-		if (!ucx->cs_synced)
-			continue;
-		if (*buf & UCX_SPDIF_CS) {
-			bit = (ucx->cs_pos + UCX_SPDIF_CS_SHIFT) % UCX_SPDIF_CS_BITS;
+		if ((status & UCX_SPDIF_CS) && pos < UCX_SPDIF_CS_BITS) {
+			bit = (pos + UCX_SPDIF_CS_SHIFT) % UCX_SPDIF_CS_BITS;
 			ucx->cs_work[bit / 8] |= 1 << (bit % 8);
 		}
-		ucx->cs_pos++;
 	}
+	ucx->cs_pos = min_t(unsigned int, pos, UCX_SPDIF_CS_BITS + 1);
 }
 
 /*
@@ -470,18 +478,17 @@ static const struct snd_kcontrol_new ucx_errors_ctls[] = {
 static void ucx_capture_complete(struct urb *urb)
 {
 	struct ucx *ucx = urb->context;
-	struct snd_pcm_substream *elapsed = NULL;
+	struct snd_pcm_substream *elapsed;
+	unsigned int pair;
 
 #ifdef UCX_PCM_TEST
 	ucx_pcm_inject_fault(ucx, urb);
 #endif
 	if (ucx_urb_stopped(ucx, urb))
 		return;
-	if (!ucx_urb_pair(urb))
-		ucx_tick(ucx);
-	ucx_spdif_status(ucx, ucx_urb_pair(urb), urb->transfer_buffer,
-				 ucx->urb_frames);
-	elapsed = ucx_copy(ucx, &ucx->capture, ucx_urb_pair(urb), urb->transfer_buffer,
+	pair = ucx_urb_pair(urb);
+	ucx_spdif_status(ucx, pair, urb->transfer_buffer, ucx->urb_frames);
+	elapsed = ucx_copy(ucx, &ucx->capture, pair, urb->transfer_buffer,
 			   ucx->urb_frames, false);
 	ucx_resubmit(ucx, urb);
 	ucx_period_elapsed(&ucx->capture, elapsed);
@@ -601,6 +608,7 @@ static int ucx_engine_start(struct ucx *ucx, unsigned int rate, unsigned int blo
 
 	ucx->pairs = pairs;
 	ucx->pair_bytes = ucx_pair_bytes(rate);
+	ucx->cs_pos = UCX_SPDIF_CS_BITS + 1;
 	ucx->urb_frames = blocks * ucx_frames_per_block(rate);
 	ucx->urb_bytes = blocks * block;
 	if (!err)

@@ -124,8 +124,7 @@ struct ucx {
 	u8 cs[UCX_SPDIF_CS_BITS / 8];	/* last complete block */
 	unsigned long cs_jiffies;	/* when it completed; 0 = never */
 	u8 cs_work[UCX_SPDIF_CS_BITS / 8];	/* URB completion only */
-	unsigned int cs_pos;
-	bool cs_synced;
+	unsigned int cs_pos;	/* frames since marker, > UCX_SPDIF_CS_BITS while unsynced */
 
 	/* Mixer: DSP command words on interface 1 */
 	struct usb_interface *aux_intf;
