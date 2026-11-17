@@ -4,11 +4,12 @@
  * to an input (default Line Out 1 -> Line In 5).
  *
  *   looptest [-D hw:UCX] [-r rate] [-p period] [-b buffer] [-o out_ch]
- *            [-i in_ch] [-s seconds] [-w capture.raw]
+ *            [-i in_ch] [-s seconds] [-a dBFS] [-w capture.raw]
  *
  * Opens playback and capture, links them so they start together, and plays
  * on channel out_ch: 8 single-sample clicks (one every 100 ms) and then a
- * 1 kHz sine, both at -20 dBFS. From channel in_ch of the capture it prints
+ * 1 kHz sine, both at -20 dBFS
+ * unless -a gives another level. From channel in_ch of the capture it prints
  *
  *  - the round-trip latency: where each click arrives minus where it was
  *    written, in frames. Both streams count frames from the same start, so
@@ -31,7 +32,7 @@
 #include <unistd.h>
 
 #define CLICKS		8
-#define AMPLITUDE	0.1	/* -20 dBFS */
+static double amplitude = 0.1;	/* -20 dBFS */
 
 static unsigned int rate = 48000, channels, out_ch, in_ch = 4;
 static snd_pcm_uframes_t period = 256, buffer;
@@ -98,7 +99,7 @@ int main(int argc, char **argv)
 	unsigned int play_xruns = 0, cap_xruns = 0;
 	int opt, err, ret = 1;
 
-	while ((opt = getopt(argc, argv, "D:r:p:b:o:i:s:w:")) != -1) {
+	while ((opt = getopt(argc, argv, "D:r:p:b:o:i:s:a:w:")) != -1) {
 		switch (opt) {
 		case 'D': dev = optarg; break;
 		case 'r': rate = atoi(optarg); break;
@@ -107,10 +108,11 @@ int main(int argc, char **argv)
 		case 'o': out_ch = atoi(optarg); break;
 		case 'i': in_ch = atoi(optarg); break;
 		case 's': seconds = atof(optarg); break;
+		case 'a': amplitude = pow(10, atof(optarg) / 20); break;
 		case 'w': dump = optarg; break;
 		default:
 			fprintf(stderr, "usage: looptest [-D dev] [-r rate] [-p period] [-b buffer] "
-				"[-o out_ch] [-i in_ch] [-s seconds] [-w capture.raw]\n");
+				"[-o out_ch] [-i in_ch] [-s seconds] [-a dBFS] [-w capture.raw]\n");
 			return 1;
 		}
 	}
@@ -149,9 +151,9 @@ int main(int argc, char **argv)
 			snd_pcm_uframes_t f = (n) + i; \
 			double v = 0; \
 			if (f >= sine_start) \
-				v = AMPLITUDE * sin(2 * M_PI * 1000 * (f - sine_start) / rate); \
+				v = amplitude * sin(2 * M_PI * 1000 * (f - sine_start) / rate); \
 			else if (f && f % click_gap == 0 && f / click_gap <= CLICKS) \
-				v = AMPLITUDE; \
+				v = amplitude; \
 			out[i * channels + out_ch] = (int32_t)lrint(v * 8388607) * 256; \
 		} \
 	} while (0)
@@ -228,7 +230,7 @@ int main(int argc, char **argv)
 			for (i = at; i < at + click_gap && i < got; i++)
 				if (fabs(x[i]) > fabs(x[best]))
 					best = i;
-			if (fabs(x[best]) < AMPLITUDE / 30)
+			if (fabs(x[best]) < amplitude / 30)
 				continue;
 			found++;
 			if ((long)(best - at) < lat_min)
