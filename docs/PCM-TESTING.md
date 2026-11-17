@@ -53,8 +53,12 @@ nix develop --command make module-pcm-test
 ```
 
 Close applications using the UCX, then unload the driver and load
-`build/pcm-kmod/kmod/snd-fireface-ucx.ko` from a privileged shell. Run
-`build/pcm-device-test` from a shell that can write
+`build/pcm-kmod/kmod/snd-fireface-ucx.ko` from a privileged shell. If
+WirePlumber manages the card, note its usual profile. After loading the test
+module, find the UCX's current device ID in `wpctl status` and select Off
+with `pw-cli set-param ID Profile '{ name: "off" }'`. This keeps PipeWire
+from opening the PCM devices during the test. Wait for any automatic mixer
+restore to finish, then run `build/pcm-device-test` from a shell that can write
 `/sys/module/snd_fireface_ucx/parameters/pcm_fault`. The test opens
 `hw:UCX` directly for exclusive access. It streams digital silence at 48 and
 192 kHz and waits ten seconds between rates so each can exercise automatic
@@ -65,7 +69,15 @@ device restart word. It checks for an XRUN on both streams and resumes
 duplex I/O after each fault. It then reopens playback 24 times while
 capture runs. The test hook is compiled into this module build only.
 
-After testing, reload the regular module from `kmod/snd-fireface-ucx.ko`
-or the installed module. For a cabled measurement of the resulting
+After testing, reload the regular module and reselect the original card
+profile using the UCX's new device ID. On NixOS, if you updated the driver
+since boot, use the module from the intended system generation.
+
+On 2026-11-18 the test passed on a first-generation UCX with Linux 6.18.58
+and `urb_blocks=2`. Both rates passed all three fault cases and all 24
+playback reopen cycles. The driver counted six stream restarts and zero
+unit-reported stream errors.
+
+For a cabled measurement of the resulting
 round-trip latency, use `tools/ratetest.sh` with the appropriate loopback
 setup.
