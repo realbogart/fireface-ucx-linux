@@ -129,11 +129,14 @@
  * 0xd (0x14000e3d0), NOT the UCX.
  * CLOCK: the four rate-family frequencies (32k / 44.1k / 48k / 50k slots,
  * as REG1 bits 0x30), encoded by ucx_dds_req(); sent at every start and
- * resume (0x14000c380). It sets the real sample clock: sent to a running
- * unit, both an 8-bit-off misreading and Windows' exact words changed a
- * 48 kHz stream (to ~23.7 / ~28.5 kHz) until a power cycle (measured).
- * Why Windows' words work for Windows is unresolved. Never send it from
- * the driver; it relies on the unit's power-up values.
+ * resume (0x14000c380). It sets the real sample clock of each family
+ * (measured 2026-11-18): Windows' words (ucx_dds_req()) give 32, 44.1
+ * and 48 kHz exactly (slot 3 not measured), and a word sent for one slot
+ * changes only that family. Wrong
+ * words (an earlier misreading of the shift) detuned a 48 kHz stream to
+ * ~23.7 / ~28.5 kHz; the right word for the slot, or a power cycle, puts
+ * it back. Not stored. The driver doesn't send it; the power-up values
+ * are the nominal rates.
  * START_RESET (0x16): wValue 0 for wIndex 0..29 and 0x20..0x3d, the first
  * thing sent at every start and resume (0x14000e720). Meaning unknown; all
  * 60 sent on a running unit changed nothing measured.
@@ -210,14 +213,17 @@
 
 /*
  * CLOCK (0x1b) request for rate-family slot 0..3 at frequency hz, as
- * 0x14000c380: v = 1e8 * 2^24 / hz (constant 0x5f5e10000000). v has 36 bits;
- * wValue keeps bits 16..31, so the top nibble is never sent and the unit
- * must supply it itself (inferred).
+ * 0x14000c380: v = 1e8 * 2^20 / hz (constant 0x5f5e10000000 = 1e8 << 20),
+ * a 32-bit period word (for a 100 MHz reference, inferred): wValue = bits 16..31,
+ * wIndex = bits 8..15 | slot. The unit runs the family at
+ * 1e8 * 2^20 / (wValue << 16 | (wIndex & 0xff00)) Hz: the 48k word
+ * restored 48 kHz, a 44.1k-slot word 0xdb92/0xdd01 gave 28 464 Hz
+ * (measured 2026-11-18).
  */
 static inline void ucx_dds_req(unsigned int slot, unsigned int hz,
 			       unsigned int *value, unsigned int *index)
 {
-	unsigned long long v = (100000000ULL << 24) / hz;
+	unsigned long long v = (100000000ULL << 20) / hz;
 
 	*value = (v >> 16) & 0xffff;
 	*index = (v & 0xff00) | (slot & 3);

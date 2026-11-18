@@ -85,7 +85,7 @@ match RME's Babyface Pro (`SND_BBFPRO_USBREQ_*` in the kernel).
 | `0x17` | REG2 | masked write; the UCX ignores the level fields Windows writes |
 | `0x18`, `0x19` | FLASH_WRITE, FLASH_STATUS | **flash programming: never send** |
 | `0x1a` | GAIN | not used by this driver |
-| `0x1b` | CLOCK | rate-family frequencies. Don't send: it detunes the sample clock until a power cycle |
+| `0x1b` | CLOCK | real clock of one rate family, slot in wIndex bits 0–1; see below |
 | `0x1c` | | IN, 4 bytes: probably the firmware version |
 | `0x1d` | START_AT | 0 = now, or a USB frame number with bit 15 set |
 | `0x1e`, `0x1f` | | IN, 4 bytes each: serial number |
@@ -105,6 +105,30 @@ match RME's Babyface Pro (`SND_BBFPRO_USBREQ_*` in the kernel).
 | `0x8000` | large buffer (more than 32 blocks) | none |
 
 The `0x3dxx` registers only mirror REG1. Change these settings through REG1.
+
+### CLOCK (`0x1b`)
+
+Sets the real sample clock of one rate family. Slot s is the family of
+REG1 `0x0030`: 0 = 32k, 1 = 44.1k, 2 = 48k, 3 = 50k. Windows sends all
+four at every start (`0x14000c380`, `ucx_dds_req()`): v = 10⁸·2²⁰ / f,
+wValue = v >> 16, wIndex = (v & `0xff00`) | s. The unit then runs that
+family at 10⁸·2²⁰ / (wValue << 16 | (wIndex & `0xff00`)) Hz.
+
+| Slot | f (Hz) | wValue | wIndex |
+|---|---|---|---|
+| 0 | 32000 | `0xc350` | `0x0000` |
+| 1 | 44100 | `0x8db9` | `0x2d01` |
+| 2 | 48000 | `0x8235` | `0x5502` |
+| 3 | 50000 | `0x7d00` | `0x0003` |
+
+Measured: with all four Windows words, 32, 44.1 and 48 kHz run at
+31 999 / 44 100 / 47 999 frames/s. A word for one slot leaves the other
+families alone, a REG1 rate write doesn't reset it, and the values are
+lost at power-off; the unit powers up at the nominal rates. A word far
+off nominal gives an unpredictable rate: one that would mean 177 kHz in
+the 48k family gave 28.5 kHz (such words came from misreading Windows'
+shift as 10⁸·2²⁴). Not measured: slot 3 (no supported rate uses it) and
+how far from nominal a word can go.
 
 ## DSP command words
 
@@ -227,7 +251,7 @@ words. `tools/ucxdsp.py` wraps it.
   transfer uses the same recovery path, since a missing block would throw
   the endpoint pairs out of alignment. Not yet seen: a bit-30 or bit-31 word
   during a running stream.
-- Requests `0x16` and `0x1b`: why Windows' clock words work for Windows.
+- Request `0x16`.
 - Registers with no effect found: inputs `0x03`–`0x06`, outputs `0x05`/`0x06`,
   `0x3d00`, `0x3d02`–`0x3d04`, `0x3d43`–`0x3d46`, the `0x3fxx` status words.
 - Dynamics attack/release, Auto Level rise time, reverb hold/release scales.

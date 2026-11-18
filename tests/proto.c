@@ -74,8 +74,8 @@ int main(void)
 	/* CLOCK (0x1b) words of a Windows start, from 0x14000c380 */
 	{
 		static const unsigned int hz[4] = { 32000, 44100, 48000, 50000 };
-		static const unsigned int val[4] = { 0x3500, 0xdb92, 0x2355, 0xd000 };
-		static const unsigned int idx[4] = { 0x0000, 0xdd01, 0x5502, 0x0003 };
+		static const unsigned int val[4] = { 0xc350, 0x8db9, 0x8235, 0x7d00 };
+		static const unsigned int idx[4] = { 0x0000, 0x2d01, 0x5502, 0x0003 };
 		unsigned int v, i, s;
 
 		for (s = 0; s < 4; s++) {
