@@ -641,6 +641,9 @@ static inline unsigned int ucx_urb_blocks_used(unsigned int urb_blocks)
  * queue. Measured with tools/looptest at 32k-192k, every combination of
  * speed class and urb_blocks 2/4 (106/138, 176/240, 320/448 frames), and
  * through PipeWire with jack_iodelay at 32k-48k (105 frames).
+ * The unit's internal loopback (no converters) gives 45/84/165 frames for
+ * the unit's part at 48k/96k/192k, so the converters take 29/28/27 of them
+ * (measured 2026-11-18, docs/PROTOCOL.md "Audio streams").
  */
 static inline unsigned int ucx_round_trip_frames(unsigned int rate, unsigned int urb_blocks)
 {

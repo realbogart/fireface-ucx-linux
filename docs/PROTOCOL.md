@@ -68,6 +68,16 @@ A stream starts with:
 4. `0x14` CHANNELS with the channel mask, after the streams run. Without it
    the unit accepts OUT packets but the DSP never sees them.
 
+Round trips without converters (measured 2026-11-18, `urb_blocks` 2,
+`looptest` reading several inputs in the same start): the unit's internal
+loopback (vendor request `0x15`) takes 77/148/293 frames at 48/96/192 kHz.
+That is the same on both endpoint pairs at quad speed, in all four
+pair-to-pair combinations, in every start. The S/PDIF coax loop is constant
+too (85/155/301). An ADAT cable loop varies from start to start at double
+and quad speed (155–159 and 305–313 frames, in steps of 2 and 4), which
+matches the S/MUX factor: one ADAT frame carries 2 or 4 samples per channel,
+and the receiver's frame phase is fixed only at single speed (inferred).
+
 ## Vendor requests
 
 Device requests, `bmRequestType` `0x40` (OUT) or `0xc0` (IN). The numbers
