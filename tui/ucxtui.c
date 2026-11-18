@@ -111,6 +111,12 @@ static const struct meta metas[] = {
 	{ "autolevel.rise-time", "Rise time", "s", "How fast the gain comes back up" },
 	{ "hardware.clock-source", "Clock source", "", "What the unit's sample clock follows. "
 	  "A source without a signal can stop audio" },
+	{ "hardware.clock-32000", "32k clock", "Hz", "Real rate of the 32 kHz family "
+	  "(64 and 128 kHz are 2x and 4x)" },
+	{ "hardware.clock-44100", "44.1k clock", "Hz", "Real rate of the 44.1 kHz family "
+	  "(88.2 and 176.4 kHz are 2x and 4x)" },
+	{ "hardware.clock-48000", "48k clock", "Hz", "Real rate of the 48 kHz family "
+	  "(96 and 192 kHz are 2x and 4x)" },
 	{ "hardware.optical-out", "Optical out", "", "ADAT or S/PDIF on the optical output" },
 	{ "hardware.spdif-professional", "S/PDIF out pro", "", "Professional channel status on "
 	  "the S/PDIF output instead of consumer" },
@@ -717,6 +723,10 @@ static bool dangerous(const struct ucx_op *op, char *why, size_t len)
 		snprintf(why, len, "The clock source changes to %s.", s->items[op->new]);
 		return true;
 	}
+	if (!strncmp(s->key, "hardware.clock-", 15) && strcmp(s->key, "hardware.clock-source")) {
+		snprintf(why, len, "The real sample clock changes to %d Hz.", op->new);
+		return true;
+	}
 	return false;
 }
 
@@ -1144,6 +1154,9 @@ static void build_hardware(void)
 	add_set(0, doc_global("hardware.clock-source"), -1);
 	add_set(0, doc_global("hardware.word-clock-single-speed"), -1);
 	add_set(0, doc_global("hardware.word-clock-termination"), -1);
+	add_set(0, doc_global("hardware.clock-32000"), -1);
+	add_set(0, doc_global("hardware.clock-44100"), -1);
+	add_set(0, doc_global("hardware.clock-48000"), -1);
 	add(R_GAP, 0, NULL);
 	add(R_HEAD, 0, "DIGITAL OUTPUTS");
 	add_set(0, doc_global("hardware.optical-out"), -1);

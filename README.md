@@ -35,7 +35,7 @@ describes it.
 | MIDI | both ports |
 | Mixer | every input and playback channel to every output, plus the FX send bus |
 | DSP | low cut, 3-band EQ, dynamics, Auto Level per channel; reverb and echo |
-| Settings | input gain, 48 V, Inst/Hi-Z, reference levels, AutoSet, loopback, clock source, word clock, S/PDIF and ADAT options |
+| Settings | input gain, 48 V, Inst/Hi-Z, reference levels, AutoSet, loopback, clock source, clock frequency per rate family (varipitch), word clock, S/PDIF and ADAT options |
 | Meters | all five meter banks |
 | System | hot plug, unplugging while playing, suspend and resume |
 

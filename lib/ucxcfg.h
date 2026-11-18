@@ -75,8 +75,8 @@ struct ucx_setting {
 	bool invert;
 };
 
-/* 14 preamp and level settings, 29 per input, 32 per output, 31 of the unit */
-#define UCX_SETTINGS	(14 + 29 * UCX_INPUTS + 32 * UCX_OUTPUTS + 31)
+/* 14 preamp and level settings, 29 per input, 32 per output, 34 of the unit */
+#define UCX_SETTINGS	(14 + 29 * UCX_INPUTS + 32 * UCX_OUTPUTS + 34)
 extern struct ucx_setting ucx_settings[UCX_SETTINGS];
 
 struct ucx_config {

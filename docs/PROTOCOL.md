@@ -127,8 +127,17 @@ families alone, a REG1 rate write doesn't reset it, and the values are
 lost at power-off; the unit powers up at the nominal rates. A word far
 off nominal gives an unpredictable rate: one that would mean 177 kHz in
 the 48k family gave 28.5 kHz (such words came from misreading Windows'
-shift as 10⁸·2²⁴). Not measured: slot 3 (no supported rate uses it) and
-how far from nominal a word can go.
+shift as 10⁸·2²⁴). The driver's range, nominal ±10 %, measured: 48k family at 43 200 and
+52 800 Hz gives 43 199 / 52 799 frames/s at 48k and 172 797 / 211 199 at
+192k, and 48 100 gives 48 099 at 48k and 96 199 at 96k (double and quad
+speed multiply). Not measured: slot 3 (no supported rate uses it) and
+anything beyond ±10 %.
+
+The driver sends the four nominal words when the unit appears (the unit
+may still hold a previous load's), keeps what it sent at hwdep register
+`0x7f40` + slot, sends that again after a resume, and has a control per
+family: `Clock 32k Frequency`, `Clock 44.1k Frequency`, `Clock 48k
+Frequency` (Hz; ucxcfg `hardware.clock-32000` …).
 
 ## DSP command words
 

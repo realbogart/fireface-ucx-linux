@@ -28,9 +28,10 @@ one of:
   like `ucxcfg apply --push`.
 - **`L`, live.** From then on every change goes to the unit as it is made.
   If the unit differs when you press `L`, the same list comes up first.
-  Switching phantom power on or changing the clock source still asks, since
-  one wrong key would be enough. `L` again switches live off. Opening another
-  file or reading the unit's state switches it off too.
+  Switching phantom power on, or changing the clock source or a clock
+  frequency, still asks, since one wrong key would be enough. `L` again
+  switches live off. Opening another file or reading the unit's state
+  switches it off too.
 
 A yellow ● marks what differs from the unit: on a line, on a channel in the
 list, on a page, and as a count at the top right ("● 12 to apply"). The line
@@ -71,10 +72,11 @@ not seen, that silences them, so start from a file in that case.
    changed in place: see "The Routing grid" below.
 4. **Effects.** Reverb and echo, with meters of the FX send bus and the FX
    return.
-5. **Hardware.** Clock, digital outputs, the three shared analog levels, EQ+D
-   record, output mutes. To the right: what the unit says about its clock
-   (rate, active source, lock and sync of the three inputs), the streams,
-   and how much of the mixer the driver knows.
+5. **Hardware.** Clock (source, word clock, and the real frequency of each
+   rate family, for varipitch), digital outputs, the three shared analog
+   levels, EQ+D record, output mutes. To the right: what the unit says
+   about its clock (rate, active source, lock and sync of the three
+   inputs), the streams, and how much of the mixer the driver knows.
 
    The streams are shown, not set: their rate, period and buffer belong to
    the program that opened them (PipeWire's `clock.rate` and

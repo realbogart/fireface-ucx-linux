@@ -95,7 +95,10 @@ ok dsp '{"version": 1, "mute-enable": false,
     "FX Send L/R": {"mix": {"PCM 1/2": -10, "Mic 1": {"gain": -3, "invert": true}}}}}'
 ok hardware '{"version": 1, "hardware": {"clock-source": "s/pdif", "optical-out": "s/pdif",
   "spdif-professional": true, "word-clock-single-speed": true, "word-clock-termination": false,
-  "eqd-record": false, "line-in-level": "-10 dBV", "line-out-level": "-10 dBV"}}'
+  "eqd-record": false, "line-in-level": "-10 dBV", "line-out-level": "-10 dBV",
+  "clock-32000": 31990, "clock-44100": 44110, "clock-48000": 48000}}'
+bad hw-clock-range '{"version": 1, "hardware": {"clock-48000": 60000}}' 'hardware.clock-48000: must be 43200 to 52800'
+bad hw-clock-step '{"version": 1, "hardware": {"clock-44100": 44100.5}}' 'hardware.clock-44100: must be 39690 to 48510'
 bad hw-in-level '{"version": 1, "hardware": {"line-in-level": "Hi Gain"}}' 'hardware.line-in-level: must be one of "-10 dBV"'
 bad line-in-level '{"version": 1, "inputs": {"Line 7/8": {"level": "Lo Gain"}}}' 'the unit has one level for Line In 5-8, "hardware.line-in-level"'
 bad line-out-level '{"version": 1, "outputs": {"Line 3": {"volume": 0, "level": "Hi Gain"}}}' 'the unit has one level for Line Out 1-6, "hardware.line-out-level"'

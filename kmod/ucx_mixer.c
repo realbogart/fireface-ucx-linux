@@ -928,6 +928,96 @@ static const struct snd_kcontrol_new ucx_loopback_ctl = {
 	.put = ucx_loopback_put,
 };
 
+/*
+ * The real sample clock of each rate family (vendor request 0x1b,
+ * ucx_dds_req()): a frequency in Hz per family, which double and quad speed
+ * multiply. The unit reports it nowhere and forgets it at power-off, so the
+ * driver sends the nominal frequencies when the unit appears (as Windows
+ * does at every start), keeps what it sent at UCX_HWDEP_REG_CLOCK + slot,
+ * and sends it again after a resume. Called with dsp_lock held.
+ */
+static int ucx_clock_send(struct ucx *ucx, unsigned int slot, unsigned int hz)
+{
+	unsigned int value, index;
+	int err;
+
+	ucx_dds_req(slot, hz, &value, &index);
+	err = ucx_vendor_write(ucx, UCX_REQ_CLOCK, value, index);
+	if (!err && slot < UCX_CLOCK_CTL_SLOTS)
+		ucx_reg_store(ucx, UCX_HWDEP_REG_CLOCK + slot, hz);
+	return err;
+}
+
+/* All four slots: the driver's frequencies for 0-2, or the nominal ones */
+static void ucx_clock_send_all(struct ucx *ucx, bool nominal)
+{
+	unsigned int slot;
+	u16 hz;
+	int err;
+
+	for (slot = 0; slot < UCX_CLOCK_SLOTS; slot++) {
+		if (nominal || slot >= UCX_CLOCK_CTL_SLOTS ||
+		    !ucx_reg_read(ucx, UCX_HWDEP_REG_CLOCK + slot, &hz))
+			hz = ucx_clock_nominal(slot);
+		err = ucx_clock_send(ucx, slot, hz);
+		if (err)
+			dev_warn(&ucx->intf->dev, "setting the %u Hz clock: %d\n", hz, err);
+	}
+}
+
+static int ucx_clock_info(struct snd_kcontrol *kctl, struct snd_ctl_elem_info *info)
+{
+	info->type = SNDRV_CTL_ELEM_TYPE_INTEGER;
+	info->count = 1;
+	info->value.integer.min = ucx_clock_min(kctl->private_value);
+	info->value.integer.max = ucx_clock_max(kctl->private_value);
+	info->value.integer.step = 1;
+	return 0;
+}
+
+static int ucx_clock_get(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *value)
+{
+	u16 hz;
+
+	if (!ucx_reg_read(snd_kcontrol_chip(kctl), UCX_HWDEP_REG_CLOCK + kctl->private_value, &hz))
+		hz = ucx_clock_nominal(kctl->private_value);
+	value->value.integer.value[0] = hz;
+	return 0;
+}
+
+static int ucx_clock_put(struct snd_kcontrol *kctl, struct snd_ctl_elem_value *value)
+{
+	struct ucx *ucx = snd_kcontrol_chip(kctl);
+	unsigned int slot = kctl->private_value;
+	long hz = value->value.integer.value[0];
+	u16 cur;
+	int err;
+
+	if (hz < ucx_clock_min(slot) || hz > ucx_clock_max(slot))
+		return -EINVAL;
+	mutex_lock(&ucx->dsp_lock);
+	if (ucx->dsp_gone)
+		err = -ENODEV;
+	else if (ucx_reg_read(ucx, UCX_HWDEP_REG_CLOCK + slot, &cur) && cur == hz)
+		err = 0;
+	else
+		err = ucx_clock_send(ucx, slot, hz) ?: 1;
+	mutex_unlock(&ucx->dsp_lock);
+	return err;
+}
+
+static const struct snd_kcontrol_new ucx_clock_ctl = {
+	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
+	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
+	.info = ucx_clock_info,
+	.get = ucx_clock_get,
+	.put = ucx_clock_put,
+};
+
+static const char *const ucx_clock_names[UCX_CLOCK_CTL_SLOTS] = {
+	"Clock 32k Frequency", "Clock 44.1k Frequency", "Clock 48k Frequency",
+};
+
 static const struct snd_kcontrol_new ucx_mixinv_ctl = {
 	.iface = SNDRV_CTL_ELEM_IFACE_MIXER,
 	.access = SNDRV_CTL_ELEM_ACCESS_READWRITE,
@@ -1585,6 +1675,8 @@ void ucx_mixer_resume(struct ucx *ucx)
 	err = usb_submit_urb(ucx->event_urb, GFP_KERNEL);
 	if (err)
 		ucx_urb_failed(ucx, &ucx->event_status, err, "device events");
+	/* Lost if the unit was off meanwhile (measured), so always sent */
+	ucx_clock_send_all(ucx, false);
 	word = ucx_dsp_word(UCX_DSP_DUMP_REQUEST);
 	ucx_dsp_send(ucx, &word, 1);
 	mutex_unlock(&ucx->dsp_lock);
@@ -1689,6 +1781,18 @@ int ucx_mixer_init(struct ucx *ucx)
 			knew.access &= ~SNDRV_CTL_ELEM_ACCESS_TLV_READ;
 		err = ucx_add_control(ucx, &knew, ucx_reg_ctls[out].name, out,
 				      &ucx->reg_kctl[out]);
+		if (err < 0)
+			return err;
+	}
+
+	/* The unit may still run a previous load's frequencies: start from nominal */
+	mutex_lock(&ucx->dsp_lock);
+	ucx_clock_send_all(ucx, true);
+	mutex_unlock(&ucx->dsp_lock);
+	for (out = 0; out < UCX_CLOCK_CTL_SLOTS; out++) {
+		struct snd_kcontrol *kctl;
+
+		err = ucx_add_control(ucx, &ucx_clock_ctl, ucx_clock_names[out], out, &kctl);
 		if (err < 0)
 			return err;
 	}

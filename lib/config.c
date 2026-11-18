@@ -17,6 +17,8 @@
 #include <string.h>
 #include <sys/stat.h>
 
+#include "ucx_hwdep.h"
+#include "ucx_proto.h"
 #include "ucxcfg.h"
 
 #define VERSION 1
@@ -92,6 +94,11 @@ struct tmpl {
 #define T_ENUM(ctl, reg, key, def, items) \
 	{ ctl, reg, key, UCX_T_ENUM, def, 0, sizeof(items) / sizeof(*(items)) - 1, 0, 1, 1, items, \
 	  sizeof(items) / sizeof(*(items)), false }
+/* A family's clock in Hz, nominal +-UCX_CLOCK_RANGE_PERMILLE, as the driver's control */
+#define T_CLOCK(ctl, slot, key, hz) \
+	T_NUM(ctl, UCX_HWDEP_REG_CLOCK + (slot), key, hz, \
+	      (hz) * (1000 - UCX_CLOCK_RANGE_PERMILLE) / 1000, \
+	      (hz) * (1000 + UCX_CLOCK_RANGE_PERMILLE) / 1000, 0, 1, 1)
 /* 0.1 dB on a control that starts at -65 dB (= off) */
 #define T_FX_VOL(ctl, reg, key, def, max) T_NUM(ctl, reg, key, def, 0, max, -650, 1, 10)
 
@@ -175,6 +182,14 @@ static const struct tmpl global_tmpl[] = {
 	T_ENUM("Line 5-8 Input Level", 0x0407, "hardware.line-in-level", 1, in_levels),
 	T_ENUM("Line 1-6 Output Level", 0x1208, "hardware.line-out-level", 1, out_levels),
 	T_ENUM("Phones Output Level", 0x1808, "hardware.phones-level", 1, out_levels),
+	/*
+	 * The real clock of each rate family in Hz (vendor request 0x1b; double
+	 * and quad speed multiply it). 0x7f40 + family is the driver's record:
+	 * the unit reports it nowhere and forgets it at power-off.
+	 */
+	T_CLOCK("Clock 32k Frequency", 0, "hardware.clock-32000", 32000),
+	T_CLOCK("Clock 44.1k Frequency", 1, "hardware.clock-44100", 44100),
+	T_CLOCK("Clock 48k Frequency", 2, "hardware.clock-48000", 48000),
 	T_BOOL("Output Mute Enable Switch", 0x3d01, "mute-enable", 1),
 	T_BOOL("Reverb Switch", 0x3c00, "reverb.on", 0),
 	T_ENUM("Reverb Type", 0x3c01, "reverb.type", 0, reverb_types),

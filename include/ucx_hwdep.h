@@ -49,6 +49,13 @@ struct ucx_hwdep_meters {
  */
 #define UCX_HWDEP_REG_LOOPBACK		0x7f20
 
+/*
+ * And for CLOCK (vendor request 0x1b), which the unit doesn't report: slot
+ * 0x7f40 + family (0 = 32k, 1 = 44.1k, 2 = 48k), the frequency in Hz the
+ * driver last sent. The driver sends the nominal ones when the unit appears.
+ */
+#define UCX_HWDEP_REG_CLOCK		0x7f40
+
 struct ucx_hwdep_status {
 	__u32 status;		/* request 0x11: clock, lock and sync state */
 	__u32 version;		/* request 0x1c */

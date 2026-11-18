@@ -972,7 +972,10 @@
     "eqd-record": true,
     "line-in-level": "+4 dBu",
     "line-out-level": "+4 dBu",
-    "phones-level": "+4 dBu"
+    "phones-level": "+4 dBu",
+    "clock-32000": 32000,
+    "clock-44100": 44100,
+    "clock-48000": 48000
   },
   "mute-enable": true,
   "reverb": {

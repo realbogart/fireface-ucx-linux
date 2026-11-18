@@ -277,6 +277,21 @@ refused with a pointer to these keys; outputs have no `level` key at all
 A clock source with nothing connected to it can stop audio. `"word clock"`
 has not been tried on a unit; its place in the list is inferred.
 
+| Key | Value | Default |
+|---|---|---|
+| `clock-32000` | Hz, 28800 to 35200: the real rate of the 32 kHz family | 32000 |
+| `clock-44100` | Hz, 39690 to 48510: the same for 44.1 kHz | 44100 |
+| `clock-48000` | Hz, 43200 to 52800: the same for 48 kHz | 48000 |
+
+These set the real sample clock of a rate family, a varipitch: with
+`"clock-48000": 48100`, a stream opened at 48 kHz runs at 48 100 frames a
+second, and everything plays about 0.2 % (3.6 cents) higher. Double and
+quad speed multiply it (96 and 192 kHz in the 48 kHz family). Digital
+outputs carry the changed rate, so a device that locks to them must follow.
+The unit forgets these at power-off, and the driver sets the nominal
+rates whenever the unit appears, so a file that wants others has to be
+applied again (the `ucxcfg-apply` service does that).
+
 ## `reverb` and `echo`
 
 Both are fed by the FX bus (`fx-send` of the inputs, `mix` of

@@ -135,8 +135,9 @@
  * changes only that family. Wrong
  * words (an earlier misreading of the shift) detuned a 48 kHz stream to
  * ~23.7 / ~28.5 kHz; the right word for the slot, or a power cycle, puts
- * it back. Not stored. The driver doesn't send it; the power-up values
- * are the nominal rates.
+ * it back. Not stored: the unit powers up at the nominal rates. The
+ * driver sends the nominal words at probe, the stored ones after a resume,
+ * and a control per family (ucx_mixer.c, "Clock 48k Frequency" ...).
  * START_RESET (0x16): wValue 0 for wIndex 0..29 and 0x20..0x3d, the first
  * thing sent at every start and resume (0x14000e720). Meaning unknown; all
  * 60 sent on a running unit changed nothing measured.
@@ -227,6 +228,36 @@ static inline void ucx_dds_req(unsigned int slot, unsigned int hz,
 
 	*value = (v >> 16) & 0xffff;
 	*index = (v & 0xff00) | (slot & 3);
+}
+
+/*
+ * The four CLOCK slots and their power-up (and Windows') frequencies. Only
+ * slots 0-2 get a control: no rate the driver offers is in the 50k family.
+ * The range the driver accepts is nominal +-UCX_CLOCK_RANGE_PERMILLE: both
+ * ends of the 48k family ran exactly, at 48k and 192k (measured
+ * 2026-11-18). UNVERIFIED beyond that.
+ */
+#define UCX_CLOCK_SLOTS		4
+#define UCX_CLOCK_CTL_SLOTS	3
+#define UCX_CLOCK_RANGE_PERMILLE	100
+static inline unsigned int ucx_clock_nominal(unsigned int slot)
+{
+	switch (slot) {
+	case 0: return 32000;
+	case 1: return 44100;
+	case 2: return 48000;
+	default: return 50000;
+	}
+}
+
+static inline unsigned int ucx_clock_min(unsigned int slot)
+{
+	return ucx_clock_nominal(slot) * (1000 - UCX_CLOCK_RANGE_PERMILLE) / 1000;
+}
+
+static inline unsigned int ucx_clock_max(unsigned int slot)
+{
+	return ucx_clock_nominal(slot) * (1000 + UCX_CLOCK_RANGE_PERMILLE) / 1000;
 }
 
 /* UCX encoding of the CHANNELS mask (models 2, 3, 8, 0x20, 0x21, 0x2b) */
